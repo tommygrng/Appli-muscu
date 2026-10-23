@@ -200,7 +200,8 @@ textarea{font:inherit;color:inherit;border:1px solid var(--line);background:var(
 .sumtab td{white-space:normal!important;vertical-align:top}
 .sumtab td:first-child{min-width:130px}
 .neg{color:var(--danger)} .pos{color:var(--ok)}
-.stfilters{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px}
+.stfilters{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;align-items:end}
+.stfilters .chk{min-height:38px}
 .stfilters select{width:100%;min-height:38px}
 .kpis4{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
 .kpi span{display:block}
@@ -220,9 +221,34 @@ textarea{font:inherit;color:inherit;border:1px solid var(--line);background:var(
 h4.sub{margin:6px 0 0;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:600}
 details.data summary{cursor:pointer;font-size:12px;color:var(--muted)}
 .mvt td.bar i{display:block;height:8px;border-radius:4px;background:var(--accent);min-width:2px}
-.mvt tr.sel td{background:var(--sunk)}
+.mvt tr.sel td,.bestrm tr.sel td{background:var(--sunk)}
+.chart .fit{stroke:var(--muted);stroke-width:1.5;stroke-dasharray:5 4}
+.spark{display:block}
+.spark .sp-ln{fill:none;stroke:var(--accent);stroke-width:1.5;stroke-linejoin:round}
+.spark .sp-fit{stroke:var(--muted);stroke-width:1;stroke-dasharray:3 3}
+.spark .sp-dot{fill:var(--accent)}
+.tfgrid{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
+@media (min-width:980px){.tfgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.layout.solo.wide{max-width:1040px}
+.tfcols{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}
+.tfh{font-size:12px;font-weight:600;margin:6px 0 4px}
+ol.rank{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+ol.rank li{display:grid;grid-template-columns:22px minmax(0,1fr) 96px 96px;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid var(--line)}
+ol.rank li:last-child{border-bottom:0}
+.rk{font-family:var(--display);font-size:20px;font-weight:700;color:var(--muted)}
+.rkname{min-width:0;display:flex;flex-direction:column}
+.rkname .mname{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;display:block}
+.rkname .mname::before{display:none}
+.rkname small{font-size:11px;color:var(--muted)}
+.rkv{text-align:right;font-family:var(--mono);font-size:13px;white-space:nowrap}
+.bestrm td{vertical-align:middle}
+@media (max-width:420px){ol.rank li{grid-template-columns:20px minmax(0,1fr) 84px}.rk{font-size:17px}ol.rank li .spark{display:none}}
 .mvt td.bar{min-width:70px;width:30%}
-@media (max-width:600px){.mvt td.bar,.mvt th:nth-child(3){display:none}}
+@media (max-width:600px){.mvt td.bar,.mvt th:nth-child(3){display:none}
+  .bestrm th:nth-child(3),.bestrm td:nth-child(3),.bestrm th:nth-child(4),.bestrm td:nth-child(4){display:none}
+  .bestrm .spark{width:64px;height:auto}
+  .mvt td:first-child,.bestrm td:first-child{white-space:normal!important}
+  .mvt .mname,.bestrm .mname{text-align:left}}
 body.statsmode .weekactions, body.statsmode #customBox{display:none}
 .step{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:10px;min-width:0}
 .step h3{font-family:var(--display);font-size:22px;margin:0;display:flex;gap:10px;align-items:baseline}
@@ -538,6 +564,7 @@ function renderMain(){
   document.body.classList.toggle('logmode', S.view === 'log');
   $('.layout').classList.toggle('solo', S.view === 'log' || S.view === 'stats');
   document.body.classList.toggle('statsmode', S.view === 'stats');
+  $('.layout').classList.toggle('wide', S.view === 'stats');
   if (S.view === 'log'){ main.innerHTML = logHtml(p); return; }
   if (S.view === 'stats'){ main.innerHTML = statsHtml(); drawCharts(); return; }
   if (S.view === 'cycle'){ main.innerHTML = cycleHtml(p); return; }
@@ -973,7 +1000,7 @@ function exportLogsCsv(keys){
 const REP_SEC = 4;            // durée d'une répétition (s), hypothèse utilisateur
 const RM_MAX_REPS = 12;       // au-delà, l'estimation du 1RM devient peu fiable
 const epley = (load, reps) => reps === 1 ? load : load * (1 + reps/30);
-const ST = {prog:'all', ex:'', per:'all'};
+const ST = {prog:'all', ex:'', per:'all', method:'ts', nodl:false};
 try{ Object.assign(ST, JSON.parse(localStorage.getItem(LS+'-stats')||'{}')); }catch(e){}
 const saveST = () => { try{ localStorage.setItem(LS+'-stats', JSON.stringify(ST)); }catch(e){} };
 const ddmm = d => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d||''); return m ? `${m[3]}/${m[2]}` : (d||'?'); };
@@ -997,6 +1024,7 @@ function collectSessions(){
     if (ST.prog !== 'all' && l0.pid !== ST.prog) continue;
     if (minDate && String(l0.date) < minDate) continue;
     const R = resolveLog(l0); const l = R.l;
+    if (ST.nodl && R.w && /d[ée]charge|deload/i.test(R.w.cycle || '')) continue;
     const exs = [];
     for (const en of R.ens){
       const sets = ((l.sets[en.id]) || []).filter(x => x.d).map(x => ({r: num(x.r || (en.plan && en.plan.reps)), l: num(x.l || (en.plan && en.plan.load))})).filter(x => x.r > 0);
@@ -1016,43 +1044,115 @@ function collectSessions(){
   return out.sort((a,b) => String(a.date).localeCompare(String(b.date)) || String(a.name).localeCompare(String(b.name)));
 }
 
+/* tendance : pente perf / jour, exprimée en %/semaine de la valeur moyenne */
+const DAY = 86400000;
+const dayNum = d => { const t = Date.parse(d + 'T12:00:00'); return isFinite(t) ? t / DAY : NaN; };
+const median = a => { const b = [...a].sort((x,y) => x-y); const n = b.length; return n ? (n % 2 ? b[(n-1)/2] : (b[n/2-1] + b[n/2]) / 2) : NaN; };
+const TREND_MIN_N = 3, TREND_MIN_DAYS = 7;
+function fitTrend(pts){
+  const P = pts.filter(p => isFinite(p.t) && isFinite(p.v));
+  const n = P.length; if (n < TREND_MIN_N) return null;
+  const t0 = Math.min(...P.map(p => p.t)), t1 = Math.max(...P.map(p => p.t)); if (t1 - t0 < TREND_MIN_DAYS) return null;
+  const mt = P.reduce((a,p) => a + p.t, 0)/n, mv = P.reduce((a,p) => a + p.v, 0)/n; if (!mv) return null;
+  let slope, icpt;
+  if (ST.method === 'ts'){
+    const sl = []; for (let i = 0; i < n; i++) for (let j = i+1; j < n; j++) if (P[j].t !== P[i].t) sl.push((P[j].v - P[i].v)/(P[j].t - P[i].t));
+    slope = median(sl); icpt = median(P.map(p => p.v - slope*p.t));
+  } else {
+    let sxy = 0, sxx = 0; P.forEach(p => { sxy += (p.t - mt)*(p.v - mv); sxx += (p.t - mt)**2; });
+    slope = sxx ? sxy/sxx : 0; icpt = mv - slope*mt;
+  }
+  const ssT = P.reduce((a,p) => a + (p.v - mv)**2, 0), ssR = P.reduce((a,p) => a + (p.v - (icpt + slope*p.t))**2, 0);
+  return {slope, icpt, n, t0, t1, perWeek: slope*7, pct: slope*7/mv*100, r2: ssT ? Math.max(0, 1 - ssR/ssT) : 0};
+}
+function sparkSVG(pts, fit, unit){
+  const W = 96, H = 30, pd = 4; if (!pts.length) return '';
+  const ts = pts.map(p => p.t), vs = pts.map(p => p.v);
+  if (fit){ vs.push(fit.icpt + fit.slope*fit.t0, fit.icpt + fit.slope*fit.t1); }
+  const tmin = Math.min(...ts), tmax = Math.max(...ts), vmin = Math.min(...vs), vmax = Math.max(...vs);
+  const X = t => pd + (tmax > tmin ? (t - tmin)/(tmax - tmin) : 0.5)*(W - 2*pd), Y = v => H - pd - (vmax > vmin ? (v - vmin)/(vmax - vmin) : 0.5)*(H - 2*pd);
+  const L = pts[pts.length-1];
+  return `<svg class="spark" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true">
+    ${fit ? `<line class="sp-fit" x1="${X(fit.t0)}" y1="${Y(fit.icpt + fit.slope*fit.t0)}" x2="${X(fit.t1)}" y2="${Y(fit.icpt + fit.slope*fit.t1)}"/>` : ''}
+    <path class="sp-ln" d="${pts.map((p,i) => `${i?'L':'M'}${X(p.t)},${Y(p.v)}`).join(' ')}"/><circle class="sp-dot" cx="${X(L.t)}" cy="${Y(L.v)}" r="2.5"/></svg>`;
+}
+const pctTxt = (f, d=1) => f ? `<span class="${f.pct < -0.05 ? 'neg' : f.pct > 0.05 ? 'pos' : 'mini'}">${f.pct > 0 ? '+' : ''}${fmt(f.pct, d)} %/sem</span>` : '<span class="mini">–</span>';
+const slopeTxt = (f, unit) => f ? `${pctTxt(f)} <span class="mini">(${f.perWeek > 0 ? '+' : ''}${fmt(f.perWeek, 1)} ${unit}/sem${ST.method === 'ols' ? `, R² ${fmt(f.r2, 2)}` : ''})</span>` : `<span class="mini">tendance non calculée (≥ ${TREND_MIN_N} séances sur ≥ ${TREND_MIN_DAYS} jours)</span>`;
+function exSeries(ses){
+  const m = new Map();
+  ses.forEach(s => { const t = dayNum(s.date); s.exs.forEach(e => {
+    const x = m.get(e.name) || {name:e.name, n:0, tonTot:0, rm:[], ton:[], best:null};
+    x.n++; x.tonTot += e.ton; x.ton.push({t, v:e.ton, s});
+    if (e.best){ x.rm.push({t, v:e.best.v, s, b:e.best}); if (!x.best || e.best.v > x.best.v) x.best = {...e.best, date:s.date}; }
+    m.set(e.name, x); }); });
+  m.forEach(x => { x.fRm = fitTrend(x.rm); x.fTon = fitTrend(x.ton.filter(p => p.v > 0)); });
+  return m;
+}
+function rankList(items, key, unit, dir){
+  if (!items.length) return `<p class="note">Pas assez de données : il faut au moins ${TREND_MIN_N} séances sur ${TREND_MIN_DAYS} jours ou plus pour un même mouvement.</p>`;
+  return `<ol class="rank">${items.map((x, i) => { const f = x[key]; const pts = key === 'fRm' ? x.rm : x.ton.filter(p => p.v > 0);
+    return `<li><span class="rk">${i+1}.</span><div class="rkname"><button class="mname" data-stex="${esc(x.name)}">${esc(x.name)}</button><small>${f.n} séances · ${f.perWeek > 0 ? '+' : ''}${fmt(f.perWeek, 1)} ${unit}/sem</small></div>
+      ${sparkSVG(pts, f)}<span class="rkv">${pctTxt(f)}</span></li>`; }).join('')}</ol>`;
+}
+function topFlop(series, key, unit, title){
+  const el = [...series.values()].filter(x => x[key]).sort((a,b) => b[key].pct - a[key].pct);
+  const top = el.slice(0, 3), rest = el.slice(3), flop = [...(rest.length ? rest : []).slice(-3)].reverse();
+  return `<div class="tf"><h4 class="sub">${title}</h4>
+    <div class="tfcols"><div><div class="tfh pos">Top 3 · meilleure progression</div>${rankList(top, key, unit)}</div>
+    <div><div class="tfh neg">Flop 3 · plus faible progression ou régression</div>${el.length > 3 ? rankList(flop, key, unit) : `<p class="note">Il faut au moins 4 mouvements avec une tendance pour séparer top et flop.</p>`}</div></div></div>`;
+}
+
 function statsHtml(){
   const progs = [...S.programs.values()].sort((a,b) => String(a.name).localeCompare(String(b.name), 'fr'));
   if (ST.prog !== 'all' && !S.programs.has(ST.prog)) ST.prog = 'all';
   const ses = collectSessions();
-  const exMap = new Map();
-  ses.forEach(s => s.exs.forEach(e => { const m = exMap.get(e.name) || {name:e.name, n:0, ton:0, rm:0, first:null, last:null};
-    m.n++; m.ton += e.ton; if (e.best) m.rm++; if (m.first == null) m.first = e.ton; m.last = e.ton; exMap.set(e.name, m); }));
-  const exList = [...exMap.values()].sort((a,b) => b.rm - a.rm || b.n - a.n || b.ton - a.ton);
-  if (!exMap.has(ST.ex)) ST.ex = (exList.find(x => x.rm) || exList[0] || {}).name || '';
+  const series = exSeries(ses);
+  const exList = [...series.values()].sort((a,b) => b.rm.length - a.rm.length || b.n - a.n || b.tonTot - a.tonTot);
+  if (!series.has(ST.ex)) ST.ex = (exList.find(x => x.rm.length) || exList[0] || {}).name || '';
   const filters = `<div class="stfilters">
       <label class="flab" for="stProg">Programme<select id="stProg"><option value="all">Tous les programmes</option>${progs.map(p => `<option value="${p.id}" ${p.id===ST.prog?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label>
       <label class="flab" for="stPer">Période<select id="stPer">${[['all','Tout'],['30','30 derniers jours'],['90','3 derniers mois'],['180','6 derniers mois']].map(([v,t]) => `<option value="${v}" ${v===ST.per?'selected':''}>${t}</option>`).join('')}</select></label>
       <label class="flab" for="stEx">Exercice<select id="stEx">${exList.map(x => `<option ${x.name===ST.ex?'selected':''}>${esc(x.name)}</option>`).join('')}</select></label>
+      <label class="flab" for="stMethod">Calcul de la tendance<select id="stMethod"><option value="ts" ${ST.method==='ts'?'selected':''}>Theil-Sen (robuste)</option><option value="ols" ${ST.method==='ols'?'selected':''}>Régression linéaire</option></select></label>
+      <label class="chk" for="stNoDl"><input type="checkbox" id="stNoDl" ${ST.nodl?'checked':''}> Exclure les semaines de décharge</label>
     </div>`;
   if (!ses.length) return `<div class="weekhead"><h2>Suivi</h2></div>${filters}
     <div class="empty"><h3>Aucune séance terminée</h3><p class="note">Les graphiques se construisent à partir des séances validées en mode séance avec « Terminer la séance ». Cochez vos séries, notez le RPE de chaque exercice, puis terminez la séance.</p>
     <button class="primary" data-view="log">Ouvrir le mode séance</button></div>`;
+  const X = series.get(ST.ex) || {rm:[], ton:[], best:null};
   const ex = ses.filter(s => s.exs.some(e => e.name === ST.ex)).map(s => ({s, e: s.exs.find(e => e.name === ST.ex)}));
   const rm = ex.filter(x => x.e.best);
-  const rmFirst = rm[0], rmLast = rm[rm.length-1];
-  const rmBest = rm.reduce((a,x) => !a || x.e.best.v > a.e.best.v ? x : a, null);
   const sr = ses.filter(s => s.srpe != null);
   const totTon = ses.reduce((a,s) => a + s.ton, 0);
-  const pct = (a, b) => a ? Math.round((b/a - 1)*1000)/10 : 0;
-  const trend = (a, b, unit) => { const d = Math.round((b - a)*10)/10; return d ? `<span class="${d<0?'neg':'pos'}">${d>0?'+':''}${fmt(d,1)}${unit} (${d>0?'+':''}${fmt(pct(a,b),1)} %)</span>` : '<span class="mini">stable</span>'; };
+  const best = [...series.values()].filter(x => x.best).sort((a,b) => b.best.v - a.best.v);
+  const mxTon = Math.max(1, ...[...series.values()].map(x => x.tonTot));
   return `<div class="weekhead"><h2>Suivi</h2><span class="note">${ses.length} séance${ses.length>1?'s':''} terminée${ses.length>1?'s':''}</span></div>
     ${filters}
     <div class="kpis kpis4">
       <div class="kpi"><b>${ses.length}</b><span>Séances</span></div>
       <div class="kpi"><b>${fmtT(totTon)}</b><span>Tonnage total</span></div>
       <div class="kpi"><b>${sr.length ? fmt(sr.reduce((a,s) => a + s.srpe, 0)/sr.length, 0) : '–'}</b><span>sRPE moyen / séance (UA)</span></div>
-      <div class="kpi"><b>${rmBest ? fmt(rmBest.e.best.v, 1) + ' kg' : '–'}</b><span>Meilleur 1RM estimé · ${esc(ST.ex)}</span></div>
+      <div class="kpi"><b>${X.best ? fmt(X.best.v, 1) + ' kg' : '–'}</b><span>Meilleur 1RM estimé · ${esc(ST.ex)}</span></div>
     </div>
 
     <section class="step">
+      <h3>Progression par mouvement</h3>
+      <p class="note">Tendance = pente de la droite perf / date, exprimée en % de la valeur moyenne par semaine, pour comparer des mouvements de charges différentes. ${ST.method === 'ts' ? 'Theil-Sen prend la médiane des pentes entre toutes les paires de séances : une séance atypique (découverte, mauvaise journée) ne déplace presque pas la tendance.' : 'Régression des moindres carrés : chaque séance pèse autant, une séance atypique influence la pente.'} Pointillés : droite de tendance.</p>
+      <div class="tfgrid">${topFlop(series, 'fRm', 'kg', '1RM estimé')}${topFlop(series, 'fTon', 'kg', 'Tonnage')}</div>
+    </section>
+
+    <section class="step">
+      <h3>Meilleurs 1RM estimés</h3>
+      ${best.length ? `<div class="tablebox"><table class="mus bestrm"><thead><tr><th>Mouvement</th><th>1RM est.</th><th>Meilleure série</th><th>Date</th><th>Évolution</th><th>Tendance</th></tr></thead>
+        <tbody>${best.map(x => `<tr class="${x.name===ST.ex?'sel':''}"><td><button class="mname" data-stex="${esc(x.name)}">${esc(x.name)}</button></td>
+          <td class="num"><b>${fmt(x.best.v,1)} kg</b></td><td class="num">${x.best.r} × ${fmt(x.best.l,1)}</td><td class="num">${ddmm(x.best.date)}</td>
+          <td>${sparkSVG(x.rm, x.fRm)}</td><td class="num">${pctTxt(x.fRm)}</td></tr>`).join('')}</tbody></table></div>`
+      : `<p class="note">Aucune série avec charge et 1 à ${RM_MAX_REPS} reps.</p>`}
+    </section>
+
+    <section class="step">
       <h3>1RM estimé · ${esc(ST.ex)}</h3>
-      ${rm.length ? `<p class="note">Meilleure série de chaque séance, formule d'Epley : charge × (1 + reps / 30), séries de 1 à ${RM_MAX_REPS} reps. ${rm.length > 1 ? 'Évolution : ' + trend(rmFirst.e.best.v, rmLast.e.best.v, ' kg') : ''}</p>
+      ${rm.length ? `<p class="note">Meilleure série de chaque séance, formule d'Epley : charge × (1 + reps / 30), séries de 1 à ${RM_MAX_REPS} reps. Tendance : ${slopeTxt(X.fRm, 'kg')}</p>
         <div class="chart" data-chart="rm"></div>
         <details class="data"><summary>Voir les données</summary><div class="tablebox"><table class="mus"><thead><tr><th>Date</th><th>Séance</th><th>Meilleure série</th><th>1RM est.</th></tr></thead>
           <tbody>${rm.map(x => `<tr><td>${ddmm(x.s.date)}</td><td>${esc(x.s.name)}</td><td class="num">${x.e.best.r} × ${fmt(x.e.best.l,1)} kg</td><td class="num">${fmt(x.e.best.v,1)} kg</td></tr>`).join('')}</tbody></table></div></details>`
@@ -1061,14 +1161,12 @@ function statsHtml(){
 
     <section class="step">
       <h3>Tonnage · ${esc(ST.ex)}</h3>
-      <p class="note">Somme reps × charge des séries validées, par séance.${ex.length > 1 ? ' Évolution : ' + trend(ex[0].e.ton, ex[ex.length-1].e.ton, ' kg') : ''}</p>
+      <p class="note">Somme reps × charge des séries validées, par séance. Tendance : ${slopeTxt(X.fTon, 'kg')}</p>
       <div class="chart" data-chart="ton"></div>
       <h4 class="sub">Tous les mouvements</h4>
-      <div class="tablebox"><table class="mus mvt"><thead><tr><th>Mouvement</th><th>Séances</th><th></th><th>Tonnage</th><th title="Tonnage de la dernière séance par rapport à la première">1re → dern.</th></tr></thead>
-        <tbody>${[...exMap.values()].sort((a,b) => b.ton - a.ton).map(m => { const mx = Math.max(...[...exMap.values()].map(x => x.ton), 1);
-          return `<tr class="${m.name===ST.ex?'sel':''}"><td><button class="mname" data-stex="${esc(m.name)}">${esc(m.name)}</button></td><td class="num">${m.n}</td>
-            <td class="bar"><i style="width:${m.ton/mx*100}%"></i></td><td class="num">${fmtT(m.ton)}</td>
-            <td class="num">${m.n > 1 && m.first ? `<span class="${m.last<m.first?'neg':m.last>m.first?'pos':''}">${m.last>=m.first?'+':''}${fmt(pct(m.first, m.last),0)} %</span>` : '–'}</td></tr>`; }).join('')}</tbody></table></div>
+      <div class="tablebox"><table class="mus mvt"><thead><tr><th>Mouvement</th><th>Séances</th><th></th><th>Tonnage</th><th>Tendance</th></tr></thead>
+        <tbody>${[...series.values()].sort((a,b) => b.tonTot - a.tonTot).map(m => `<tr class="${m.name===ST.ex?'sel':''}"><td><button class="mname" data-stex="${esc(m.name)}">${esc(m.name)}</button></td><td class="num">${m.n}</td>
+            <td class="bar"><i style="width:${m.tonTot/mxTon*100}%"></i></td><td class="num">${fmtT(m.tonTot)}</td><td class="num">${pctTxt(m.fTon, 0)}</td></tr>`).join('')}</tbody></table></div>
     </section>
 
     <section class="step">
@@ -1090,28 +1188,40 @@ function drawChart(el, pts, o){
   const W = Math.max(280, el.clientWidth), H = o.h || 210, m = {l:46, r:14, t:14, b:30};
   const pw = W - m.l - m.r, ph = H - m.t - m.b, n = pts.length;
   const vals = pts.map(p => p.v);
+  if (o.fit){ const T = pts.map(p => p.t); vals.push(o.fit.icpt + o.fit.slope*Math.min(...T), o.fit.icpt + o.fit.slope*Math.max(...T)); }
   let lo = o.fixed ? o.fixed[0] : (o.zero ? 0 : Math.min(...vals)), hi = o.fixed ? o.fixed[1] : Math.max(...vals);
   if (!o.fixed){ if (hi === lo){ hi += hi ? hi*0.1 : 1; lo = o.zero ? 0 : Math.max(0, lo - (lo*0.1 || 1)); } const pad = (hi - lo)*0.08; hi += pad; if (!o.zero) lo = Math.max(0, lo - pad); }
   const step = o.step || niceStep((hi - lo)/4); lo = Math.floor(lo/step)*step; hi = Math.ceil(hi/step)*step;
   const y = v => m.t + ph - (v - lo)/(hi - lo || 1)*ph;
-  const band = pw / n, x = i => m.l + band*(i + 0.5);
+  const band = pw / n; let x = i => m.l + band*(i + 0.5);
+  const timed = o.time && n > 1;
+  if (timed){ const T = pts.map(p => p.t), tmin = Math.min(...T), tmax = Math.max(...T), ip = 14;
+    x = i => m.l + ip + (tmax > tmin ? (pts[i].t - tmin)/(tmax - tmin) : 0.5)*(pw - 2*ip); }
   let g = '';
   for (let v = lo; v <= hi + 1e-9; v += step) g += `<line x1="${m.l}" x2="${W-m.r}" y1="${y(v)}" y2="${y(v)}" class="grid"/><text x="${m.l-6}" y="${y(v)+4}" text-anchor="end" class="ax">${fmt(v, step < 1 ? 1 : 0)}</text>`;
+  if (timed){ let lastX = Infinity; const keep = [];
+    for (let i = n-1; i >= 0; i--){ if (lastX - x(i) >= 46){ keep.push(i); lastX = x(i); } }
+    keep.forEach(i => g += `<text x="${x(i)}" y="${H-8}" text-anchor="middle" class="ax">${esc(pts[i].x)}</text>`);
+  } else {
   const every = Math.max(1, Math.ceil(n / Math.max(1, Math.floor(pw/52))));
-  pts.forEach((p, i) => { if (i % every === 0 || i === n-1) if (!(i !== n-1 && n-1 - i < every)) g += `<text x="${x(i)}" y="${H-8}" text-anchor="middle" class="ax">${esc(p.x)}</text>`; });
+  pts.forEach((p, i) => { if (i % every === 0 || i === n-1) if (!(i !== n-1 && n-1 - i < every)) g += `<text x="${x(i)}" y="${H-8}" text-anchor="middle" class="ax">${esc(p.x)}</text>`; }); }
   let marks = '';
   if (o.type === 'bar'){
     const bw = Math.max(4, Math.min(28, band*0.62));
     pts.forEach((p, i) => { const top = y(p.v), base = y(lo), h = Math.max(0, base - top), r = Math.min(4, bw/2, h);
       marks += `<path class="mk" d="M${x(i)-bw/2},${base} V${top+r} Q${x(i)-bw/2},${top} ${x(i)-bw/2+r},${top} H${x(i)+bw/2-r} Q${x(i)+bw/2},${top} ${x(i)+bw/2},${top+r} V${base} Z"/>`; });
   } else {
+    if (o.fit){ const f = o.fit; const T = pts.map(p => p.t); const v0 = f.icpt + f.slope*T[0], v1 = f.icpt + f.slope*T[n-1];
+      marks += `<line class="fit" x1="${x(0)}" y1="${y(v0)}" x2="${x(n-1)}" y2="${y(v1)}"/>`; }
     marks += `<path class="ln" d="${pts.map((p, i) => `${i ? 'L' : 'M'}${x(i)},${y(p.v)}`).join(' ')}"/>`;
     pts.forEach((p, i) => marks += `<circle class="dot" cx="${x(i)}" cy="${y(p.v)}" r="4"/>`);
     const L = n-1; marks += `<text x="${Math.min(x(L), W-m.r-2)}" y="${y(pts[L].v)-10}" text-anchor="${n > 1 ? 'end' : 'middle'}" class="lab">${esc(o.fmt(pts[L].v))}</text>`;
   }
   el.innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.label)}">${g}${marks}<line class="guide" y1="${m.t}" y2="${m.t+ph}" x1="0" x2="0" visibility="hidden"/><rect class="hit" x="${m.l}" y="${m.t}" width="${pw}" height="${ph}"/></svg><div class="tip" hidden></div>`;
   const svg = el.querySelector('svg'), tip = el.querySelector('.tip'), guide = el.querySelector('.guide');
-  const show = ev => { const r = svg.getBoundingClientRect(); const i = Math.max(0, Math.min(n-1, Math.floor((ev.clientX - r.left - m.l)/band)));
+  const show = ev => { const r = svg.getBoundingClientRect(); const px = ev.clientX - r.left;
+    let i = Math.max(0, Math.min(n-1, Math.floor((px - m.l)/band)));
+    if (timed){ let bd = Infinity; pts.forEach((_, j) => { const d = Math.abs(x(j) - px); if (d < bd){ bd = d; i = j; } }); }
     guide.setAttribute('x1', x(i)); guide.setAttribute('x2', x(i)); guide.setAttribute('visibility', 'visible');
     el.querySelectorAll('.mk,.dot').forEach((d, j) => d.classList.toggle('on', j === i));
     tip.innerHTML = pts[i].tip; tip.hidden = false;
@@ -1126,19 +1236,21 @@ function drawCharts(){
   const head = s => `<b>${ddmm(s.date)} · ${esc(s.name)}</b>${s.week ? `<br><span class="mini">${esc(s.week)}${s.prog ? ' · ' + esc(s.prog) : ''}</span>` : ''}`;
   const el = k => document.querySelector(`[data-chart="${k}"]`);
   const rm = ex.filter(x => x.e.best);
-  if (el('rm') && rm.length) drawChart(el('rm'), rm.map(({s, e}) => ({x: ddmm(s.date), v: e.best.v, tip: `${head(s)}<br>1RM estimé : <b>${fmt(e.best.v,1)} kg</b><br>meilleure série ${e.best.r} × ${fmt(e.best.l,1)} kg`})),
-    {type:'line', label:`1RM estimé ${ST.ex}`, fmt: v => fmt(v,1) + ' kg'});
+  const fRm = fitTrend(rm.map(({s, e}) => ({t: dayNum(s.date), v: e.best.v})));
+  if (el('rm') && rm.length) drawChart(el('rm'), rm.map(({s, e}) => ({x: ddmm(s.date), t: dayNum(s.date), v: e.best.v, tip: `${head(s)}<br>1RM estimé : <b>${fmt(e.best.v,1)} kg</b><br>meilleure série ${e.best.r} × ${fmt(e.best.l,1)} kg`})),
+    {type:'line', time:true, fit:fRm, label:`1RM estimé ${ST.ex}`, fmt: v => fmt(v,1) + ' kg'});
   if (el('ton') && ex.length) drawChart(el('ton'), ex.map(({s, e}) => ({x: ddmm(s.date), v: e.ton, tip: `${head(s)}<br>Tonnage : <b>${fmt(e.ton)} kg</b><br>${e.sets.length} séries · ${e.reps} reps`})),
     {type:'bar', zero:true, label:`Tonnage ${ST.ex}`, fmt: v => fmt(v) + ' kg'});
   const sr = ses.filter(s => s.srpe != null);
   if (el('srpe') && sr.length) drawChart(el('srpe'), sr.map(s => ({x: ddmm(s.date), v: s.srpe, tip: `${head(s)}<br>Charge sRPE : <b>${fmt(s.srpe,0)} UA</b><br>RPE moyen ${fmt(s.rpe,1)} × ${fmt(s.dur/60,1)} min`})),
     {type:'bar', zero:true, label:'Charge sRPE par séance', fmt: v => fmt(v,0)});
-  if (el('rpe') && sr.length) drawChart(el('rpe'), sr.map(s => ({x: ddmm(s.date), v: s.rpe, tip: `${head(s)}<br>RPE moyen : <b>${fmt(s.rpe,1)}</b><br>${fmt(s.dur/REP_SEC)} reps · ${fmt(s.dur/60,1)} min sous charge`})),
-    {type:'line', fixed:[0,10], step:2, h:170, label:'RPE moyen de séance', fmt: v => fmt(v,1)});
+  if (el('rpe') && sr.length) drawChart(el('rpe'), sr.map(s => ({x: ddmm(s.date), t: dayNum(s.date), v: s.rpe, tip: `${head(s)}<br>RPE moyen : <b>${fmt(s.rpe,1)}</b><br>${fmt(s.dur/REP_SEC)} reps · ${fmt(s.dur/60,1)} min sous charge`})),
+    {type:'line', time:true, fixed:[0,10], step:2, h:170, label:'RPE moyen de séance', fmt: v => fmt(v,1)});
 }
 let rzT = null; window.addEventListener('resize', () => { clearTimeout(rzT); rzT = setTimeout(drawCharts, 150); });
 document.addEventListener('change', e => {
-  const id = e.target.id; if (!['stProg','stPer','stEx'].includes(id)) return;
+  const id = e.target.id; if (!['stProg','stPer','stEx','stMethod','stNoDl'].includes(id)) return;
+  if (id === 'stMethod') ST.method = e.target.value; if (id === 'stNoDl') ST.nodl = e.target.checked;
   if (id === 'stProg') ST.prog = e.target.value; if (id === 'stPer') ST.per = e.target.value; if (id === 'stEx') ST.ex = e.target.value;
   saveST(); renderMain();
 });
