@@ -1,0 +1,763 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Vitesse Barre</title>
+<meta name="theme-color" content="#0f1318">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Vitesse Barre">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+/* Layout : vidéo en haut avec calque de suivi, bandeau de mesures géantes lisibles à distance, résultats et réglages dessous. Thème sombre unique (salle, écran au rack). */
+:root{
+  --bg:#0f1318; --surface:#171c23; --sunk:#12161c; --line:#2a313b; --ink:#e9edf2; --muted:#8e98a6;
+  --accent:#f0a83a; --accent-ink:#1a1206; --track:#38d6f2; --good:#5cc98a; --bad:#ef6f5e;
+  --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 var(--body)}
+[hidden]{display:none!important}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer;border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:9px 13px;min-height:42px}
+button:disabled{opacity:.45;cursor:default}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
+button.rec{background:var(--bad);border-color:var(--bad);color:#fff;font-weight:700}
+button.ghost{background:transparent;border-color:transparent;color:var(--muted)}
+input,select{background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:8px 9px;min-height:40px;min-width:0}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:900px;margin:0 auto;padding-left:max(14px,env(safe-area-inset-left,0px));padding-right:max(14px,env(safe-area-inset-right,0px));padding-block:10px 40px;display:flex;flex-direction:column;gap:12px}
+header{display:flex;align-items:center;gap:10px}
+.brand{font-family:var(--display);font-weight:700;font-size:24px;letter-spacing:.03em;text-transform:uppercase}
+.brand span{color:var(--accent)}
+.status{margin-left:auto;font-size:12px;color:var(--muted);text-align:right}
+.stagebox{display:flex;justify-content:center}
+.stage{position:relative;background:#000;border-radius:12px;overflow:hidden;width:100%;max-width:100%;touch-action:manipulation}
+.stage video,.stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.stage video{object-fit:fill}
+.stage .placeholder{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:20px;color:var(--muted)}
+.steps{display:flex;gap:6px;flex-wrap:wrap}
+.step{font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+.step.on{border-color:var(--accent);color:var(--ink)}
+.step.ok{border-color:var(--good);color:var(--good)}
+.hint{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:8px;padding:10px 12px;font-size:14px}
+.big{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.big .m{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 10px;min-width:0}
+.big b{display:block;white-space:nowrap;font-family:var(--display);font-size:clamp(30px,10vw,64px);line-height:1;font-variant-numeric:tabular-nums}
+.big span{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.big .vl b.bad{color:var(--bad)}
+.actions{display:flex;flex-wrap:wrap;gap:8px}
+.actions button{flex:1 1 140px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.card h2{font-family:var(--display);font-size:22px;margin:0;line-height:1.1}
+.note{font-size:12px;color:var(--muted);margin:0}
+.warn{font-size:13px;color:var(--bad);margin:0}
+.tablebox{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:500;text-align:right;padding:4px 6px}
+th:first-child,td:first-child{text-align:left}
+td{padding:5px 6px;text-align:right;border-top:1px solid var(--line);font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+tr.best td{color:var(--good)}
+.chart svg{display:block;width:100%;height:auto;max-width:100%}
+.chart .grid{stroke:var(--line);stroke-width:1}
+.chart .ax{fill:var(--muted);font-size:11px;font-family:var(--mono)}
+.chart .pos{fill:none;stroke:var(--track);stroke-width:2}
+.chart .rep{fill:color-mix(in srgb,var(--accent) 18%,transparent)}
+.chart .bar{fill:var(--accent)}
+.chart .lab{fill:var(--ink);font-size:11px;font-family:var(--mono)}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
+label.c{display:flex;gap:8px;align-items:center;font-size:13px}
+details summary{cursor:pointer;font-weight:600}
+.hist{display:flex;flex-direction:column;gap:6px}
+.hist .h{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;border-top:1px solid var(--line);padding-top:6px;font-size:13px}
+.hist .h small{display:block;color:var(--muted)}
+.adj{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.adj button{min-width:48px;font-size:20px;font-weight:700}
+.seekrow{display:flex;gap:10px;align-items:center}
+.seekrow input{flex:1}
+.opts{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;justify-content:space-between}
+.opts button{min-height:36px;padding:6px 8px;text-decoration:underline}
+details.valid{border:1px solid var(--line);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px}
+details.valid[open]{display:flex}
+details.valid summary{margin-bottom:4px}
+#tRef input{width:58px;min-height:36px;padding:4px 6px;text-align:right;font-family:var(--mono)}
+#tRef td{border-top:1px solid var(--line)}
+.dpos{color:var(--good)} .dneg{color:var(--bad)}
+.swatch{display:inline-block;width:16px;height:16px;border-radius:50%;vertical-align:middle;border:1px solid var(--line);margin-right:6px}
+@media (min-width:760px){.big b{font-size:60px}}
+/* mode intégré dans Planif Muscu */
+body.embed .noembed{display:none!important}
+body.embed .brand{font-size:20px}
+.ctx{font-size:13px;color:var(--muted);margin:-4px 0 0}
+#bSend{min-height:48px;font-size:16px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">Vitesse <span>Barre</span></div>
+    <div class="status" id="status">Caméra éteinte</div>
+    <button id="bClose" hidden>Fermer</button>
+  </header>
+  <p class="ctx" id="ctx" hidden></p>
+
+  <div class="steps" id="steps">
+    <span class="step" data-st="cam">1 · Caméra</span>
+    <span class="step" data-st="pick">2 · Cible</span>
+    <span class="step" data-st="calib">3 · Calibrage</span>
+    <span class="step" data-st="rec">4 · Mesure</span>
+  </div>
+
+  <div class="stagebox"><div class="stage" id="stage" style="aspect-ratio:16/9">
+    <video id="video" playsinline muted autoplay></video>
+    <canvas id="ov"></canvas>
+    <div class="placeholder" id="ph">Posez le téléphone de profil, à hauteur des disques, à 1,5–3 m de la barre.<br>Suivez un disque de couleur (vert, bleu, rouge, jaune…) ou une pastille vive collée au centre d'un disque noir.</div>
+  </div></div>
+  <div class="seekrow" id="seekRow" hidden><span class="note" id="seekT">0,00 s</span><input type="range" id="seek" min="0" max="1" step="0.01" value="0" aria-label="Position dans la vidéo"><span class="note" id="fileName"></span></div>
+
+  <div class="hint" id="hint">Touchez « Allumer la caméra ».</div>
+
+  <div class="big">
+    <div class="m"><b id="mReps">0</b><span>Reps</span></div>
+    <div class="m"><b id="mV">–</b><span>Vit. moy. conc. m/s</span></div>
+    <div class="m vl"><b id="mVL">–</b><span>Perte de vitesse</span></div>
+  </div>
+
+  <div class="actions">
+    <button class="primary" id="bCam">Allumer la caméra</button>
+    <button id="bPick" disabled>Cibler la couleur</button>
+    <button id="bCal" disabled>Calibrer sur le disque</button>
+    <button id="bCalAuto" disabled>Calibrer automatiquement</button>
+    <button class="primary" id="bRec" disabled>Démarrer la série</button>
+  </div>
+  <div class="adj" id="adjRow" hidden><span class="note">Ajuster le contour au bord du disque</span><button id="bAdjM" aria-label="Réduire le contour">−</button><button id="bAdjP" aria-label="Agrandir le contour">+</button><span class="note" id="adjInfo"></span></div>
+  <div class="opts">
+    <label class="c noembed" for="oVid"><input type="checkbox" id="oVid"> Filmer la série (mode essai, pour comparer à un appareil de référence)</label>
+    <button class="ghost noembed" id="bFile">Analyser une vidéo enregistrée…</button>
+    <input type="file" id="fileIn" accept="video/*" hidden>
+  </div>
+
+  <section class="card" id="res" hidden>
+    <h2>Résultats de la série</h2>
+    <div id="quality"></div>
+    <div class="tablebox"><table id="tReps"></table></div>
+    <div class="chart" id="cV"></div>
+    <div class="chart" id="cP"></div>
+    <div class="form noembed">
+      <label class="f" for="sEx">Mouvement<input id="sEx" list="exl" placeholder="ex. Back squat"></label>
+      <label class="f" for="sLoad">Charge (kg)<input id="sLoad" inputmode="decimal" placeholder="ex. 100"></label>
+    </div>
+    <details class="valid noembed" id="validBox">
+      <summary>Valeurs de l'appareil de référence</summary>
+      <p class="note">Saisissez rep par rep les valeurs de votre appareil de référence (capteur linéaire, centrale inertielle…). Laissez vide une ligne si l'appareil n'a pas cette rep, et précisez-le dans le commentaire.</p>
+      <label class="f" for="refDev">Appareil de référence<input id="refDev" placeholder="ex. GymAware, Vitruve, Enode…"></label>
+      <div class="tablebox"><table id="tRef"></table></div>
+      <button class="ghost" id="bRefAdd" style="align-self:flex-start">+ ligne (rep vue seulement par la référence)</button>
+      <p class="note" id="refSum"></p>
+      <label class="f" for="sNote">Commentaire<input id="sNote" placeholder="ex. rep 3 non détectée par la référence, téléphone à 2 m"></label>
+    </details>
+    <button class="primary" id="bSend" hidden>Valider dans la séance</button>
+    <div class="actions noembed">
+      <button class="primary" id="bSave">Enregistrer la série</button>
+      <button id="bTrial">Télécharger l'essai (JSON)</button>
+      <button id="bVid" hidden>Télécharger la vidéo</button>
+      <button id="bShare" hidden>Partager vidéo + essai</button>
+      <button id="bRaw">Exporter la trajectoire (CSV)</button>
+    </div>
+  </section>
+
+  <section class="card noembed">
+    <h2>Historique</h2>
+    <div class="hist" id="hist"></div>
+    <div class="actions"><button id="bExp">Exporter l'historique (CSV)</button></div>
+  </section>
+
+  <section class="card">
+    <details id="setDetails">
+      <summary>Réglages</summary>
+      <div class="form" style="margin-top:10px">
+        <label class="f" for="oObj">Objet suivi<select id="oObj"><option value="auto">Automatique</option><option value="marker">Pastille collée</option><option value="plate">Disque entier (coloré)</option></select></label>
+        <label class="f" for="oDiam">Diamètre du disque (cm)<input id="oDiam" inputmode="decimal"></label>
+        <label class="f" for="oMark">Diamètre de la pastille (cm)<input id="oMark" inputmode="decimal"></label>
+        <label class="f" for="oRom">Amplitude mini d'une rep (cm)<input id="oRom" inputmode="decimal"></label>
+        <label class="f" for="oTol">Tolérance couleur<input id="oTol" type="range" min="6" max="40" step="1"></label>
+        <label class="f" for="oRes">Résolution d'analyse<select id="oRes"><option value="320">320 px (rapide)</option><option value="480">480 px</option><option value="640">640 px (précis)</option></select></label>
+        <label class="f" for="oFps">Images / seconde demandées<select id="oFps"><option value="30">30</option><option value="60">60</option></select></label>
+        <label class="f" for="oRate">Vitesse de lecture pour l'analyse de fichier<select id="oRate"><option value="1">×1</option><option value="0.5">×0,5</option><option value="0.25">×0,25 (vidéos 120 i/s)</option></select></label>
+        <label class="f" for="oStop">Arrêt auto sans mouvement (s)<input id="oStop" inputmode="numeric"></label>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:10px">
+        <label class="c" for="oBeep"><input type="checkbox" id="oBeep"> Bip à chaque rep</label>
+        <label class="c" for="oMask"><input type="checkbox" id="oMask"> Afficher les pixels détectés (réglage)</label>
+        <label class="c" for="oExp"><input type="checkbox" id="oExp"> Temps de pose court pour réduire le flou (Android ; l'image s'assombrit, éclairez bien)</label>
+        <label class="c" for="oTorch"><input type="checkbox" id="oTorch"> Lampe (Android, si disponible)</label>
+      </div>
+      <p class="note" style="margin-top:10px" id="calInfo"></p>
+    </details>
+  </section>
+
+  <section class="card">
+    <details>
+      <summary>Mode d'emploi et limites</summary>
+      <div class="note" style="display:flex;flex-direction:column;gap:6px;margin-top:8px;font-size:13px">
+        <p><b>Cible.</b> Avec un disque de couleur (bumper vert, bleu, rouge, jaune), touchez simplement le disque : l'appli suit le disque entier, puis « Calibrer automatiquement » mesure sa hauteur (45 cm par défaut). Avec des disques noirs ou gris, collez une pastille ronde de couleur vive (4–6 cm) au centre du disque extérieur.</p>
+        <p><b>Installation au rack.</b> Téléphone fixe, perpendiculaire à la barre, objectif à hauteur des disques, à 1,5–3 m. Tout le trajet de la barre doit rester dans l'image.</p>
+        <p><b>Calibrage.</b> « Calibrer sur le disque » : touchez le bord haut puis le bord bas du disque (45 cm pour un disque olympique de 20/25 kg). C'est la méthode la plus précise. « Calibrer sur la pastille » utilise la taille de la pastille, plus rapide mais moins précis. À refaire si vous déplacez le téléphone.</p>
+        <p><b>Mesures.</b> Une rep = une montée d'au moins l'amplitude minimale. Vitesse moyenne concentrique = amplitude ÷ durée de la montée ; vitesse maximale = pic de la vitesse lissée ; perte de vitesse = (meilleure − dernière) ÷ meilleure.</p>
+        <p><b>Limites.</b> La mesure suppose que la barre se déplace dans un plan parallèle au téléphone : si elle se rapproche ou s'éloigne de la caméra, la mesure est faussée (l'appli le signale quand la taille apparente de la pastille varie). À 30 images/s, la vitesse moyenne reste correcte mais la vitesse maximale et les mouvements très rapides sont moins précis. Ordre de grandeur attendu : 5–10 % d'écart avec un capteur linéaire.</p>
+      </div>
+    </details>
+  </section>
+</div>
+<datalist id="exl"><option>Back squat</option><option>Front squat</option><option>Box squat</option><option>Développé couché</option><option>Soulevé de terre</option><option>Trap bar deadlift</option><option>RDL</option><option>Tirage planche</option><option>Hip thrust</option><option>CMJ barre</option></datalist>
+
+<script>
+(() => {
+'use strict';
+const $ = s => document.querySelector(s);
+const LS = 'vitesse-barre-v1';
+const QS = new URLSearchParams(location.search), EMBED = QS.get('embed') === '1';
+const fmt = (x, d=2) => (x == null || !isFinite(x)) ? '–' : x.toLocaleString('fr-FR', {minimumFractionDigits:d, maximumFractionDigits:d});
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const num = v => { const x = parseFloat(String(v ?? '').replace(',', '.')); return isFinite(x) ? x : NaN; };
+
+/* ---------- réglages persistants ---------- */
+const DEF = {vid:false, fileRate:0.25, refDev:'', obj:'auto', diam:45, mark:5, rom:15, tol:22, res:480, fps:60, stop:6, beep:true, mask:false, target:null, mPerPx:null, calMode:null};
+const O = {...DEF};
+let HIST = [];
+try{ Object.assign(O, JSON.parse(localStorage.getItem(LS + '-opt') || '{}')); HIST = JSON.parse(localStorage.getItem(LS + '-hist') || '[]'); }catch(e){}
+const saveO = () => { try{ localStorage.setItem(LS + '-opt', JSON.stringify(O)); }catch(e){} };
+const saveH = () => { try{ localStorage.setItem(LS + '-hist', JSON.stringify(HIST)); }catch(e){ setStatus('Stockage plein : exportez puis videz l\'historique'); } };
+
+/* ---------- état ---------- */
+const S = { src:null, vidRec:null, vidChunks:[], vidBlob:null, vidMime:'', vidStartPerf:0, firstPerf:null, lastMT:-1, ref:[], savedId:null, stream:null, track:null, vw:0, vh:0, stage:'off', calPts:[], areas:[], samples:[], rec:false, t0:null,
+  last:null, blobR:4, lostN:0, frames:0, fpsT:[], lastAnalysis:null, repsSeen:0, lastMoveT:0, wake:null, audio:null, maskImg:null, res:null };
+const video = $('#video'), ov = $('#ov'), octx = ov.getContext('2d');
+const proc = document.createElement('canvas'), pctx = proc.getContext('2d', {willReadFrequently:true});
+
+const active = () => !!(S.stream || S.src === 'file');
+function setStatus(t){ $('#status').textContent = t; }
+function hint(t){ $('#hint').innerHTML = t; }
+function steps(){
+  const done = {cam: !!S.stream, pick: !!O.target, calib: !!O.mPerPx, rec: !!S.res};
+  document.querySelectorAll('.step').forEach(el => { const k = el.dataset.st; el.classList.toggle('ok', !!done[k]); el.classList.toggle('on', S.stage === k || (S.stage.startsWith('cal') && k === 'calib')); });
+  $('#bPick').disabled = !active() || S.rec; $('#bCal').disabled = !active() || S.rec; $('#bCalAuto').disabled = !active() || !O.target || S.rec;
+  $('#bRec').disabled = !active() || !O.target || !O.mPerPx;
+  const isFile = S.src === 'file';
+  $('#bRec').textContent = S.rec ? (isFile ? 'Arrêter l\'analyse' : 'Arrêter la série') : (isFile ? 'Analyser la vidéo' : 'Démarrer la série'); $('#bRec').className = S.rec ? 'rec' : 'primary';
+  $('#adjRow').hidden = !(O.calMode === 'plate-auto' && O.calDv) || S.rec; if (O.calDv) $('#adjInfo').textContent = `${Math.round(O.calDv)} px = ${fmt(num(O.diam), 0)} cm`;
+  $('#seekRow').hidden = !isFile; $('#seek').disabled = S.rec; $('#oVid').disabled = isFile || S.rec;
+  $('#bCam').textContent = S.stream ? 'Éteindre la caméra' : (isFile ? 'Revenir à la caméra' : 'Allumer la caméra'); $('#bCam').className = S.stream ? '' : 'primary';
+  $('#calInfo').innerHTML = O.mPerPx ? `Calibrage actuel : ${fmt(O.mPerPx*1000, 3)} mm par pixel vidéo (${O.calMode === 'plate' ? 'touches sur le disque' : O.calMode === 'plate-auto' ? 'disque suivi, automatique' : 'sur la pastille'}).` : 'Pas encore de calibrage.';
+}
+
+/* ---------- caméra ---------- */
+async function startCam(){
+  if (S.src === 'file') closeFile();
+  try{
+    const st = await navigator.mediaDevices.getUserMedia({audio:false, video:{facingMode:{ideal:'environment'}, width:{ideal:1280}, height:{ideal:720}, frameRate:{ideal:+O.fps}}});
+    S.stream = st; S.src = 'cam'; S.track = st.getVideoTracks()[0]; video.srcObject = st; await video.play();
+    await new Promise(r => video.videoWidth ? r() : video.addEventListener('loadedmetadata', r, {once:true}));
+    S.vw = video.videoWidth; S.vh = video.videoHeight;
+    $('#stage').style.aspectRatio = `${S.vw}/${S.vh}`; fitStage(); $('#ph').hidden = true;
+    const set = S.track.getSettings ? S.track.getSettings() : {};
+    setStatus(`${S.vw}×${S.vh} · ${set.frameRate ? Math.round(set.frameRate) + ' i/s' : ''}`);
+    try{ S.wake = await navigator.wakeLock.request('screen'); }catch(e){}
+    applyTorch(); applyExposure();
+    S.stage = O.target ? (O.mPerPx ? 'rec' : 'calib') : 'pick';
+    hint(!O.target ? 'Touchez « Cibler la pastille », puis touchez la pastille sur l\'image.' : !O.mPerPx ? 'Pastille mémorisée. Calibrez : touchez « Calibrer sur le disque ».' : 'Prêt. Vérifiez que la pastille est suivie (cercle bleu), puis « Démarrer la série ».');
+    loop(); steps();
+  }catch(e){
+    setStatus('Caméra refusée');
+    hint(`Impossible d'ouvrir la caméra (${esc(e.name || e.message)}). Autorisez la caméra pour ce site dans les réglages du navigateur. L'appli doit être ouverte en https.`);
+  }
+}
+function stopCam(){
+  if (S.rec) stopRec();
+  if (S.stream) S.stream.getTracks().forEach(t => t.stop());
+  S.stream = null; S.src = null; S.track = null; video.srcObject = null; $('#ph').hidden = false; S.stage = 'off';
+  try{ S.wake && S.wake.release(); }catch(e){} S.wake = null;
+  octx.clearRect(0, 0, ov.width, ov.height); setStatus('Caméra éteinte'); hint('Touchez « Allumer la caméra ».'); steps();
+}
+async function applyExposure(){
+  // Android (Chrome) : temps de pose court pour réduire le flou de bougé ; ignoré si non pris en charge
+  const t = S.track; if (!t || !t.getCapabilities) return;
+  try{ const c = t.getCapabilities();
+    if (!O.shortExp){ if (c.exposureMode && c.exposureMode.includes('continuous')) await t.applyConstraints({advanced:[{exposureMode:'continuous'}]}); return; }
+    if (!(c.exposureMode && c.exposureMode.includes('manual') && c.exposureTime)){ setStatus('Temps de pose non réglable sur ce téléphone'); return; }
+    const v = Math.max(c.exposureTime.min, Math.min(c.exposureTime.max, 40)); // 40 × 100 µs = 4 ms
+    await t.applyConstraints({advanced:[{exposureMode:'manual', exposureTime: v}]}); setStatus(`Temps de pose : ${fmt(v / 10, 1)} ms`);
+  }catch(e){ setStatus('Temps de pose non réglable sur ce téléphone'); }
+}
+async function applyTorch(){ try{ if (S.track && S.track.getCapabilities && S.track.getCapabilities().torch) await S.track.applyConstraints({advanced:[{torch: !!O.torch}]}); }catch(e){} }
+function fitStage(){
+  const st = $('#stage'); if (!S.vw) return;
+  const maxH = Math.min(window.innerHeight * 0.58, 720), w = st.parentElement.clientWidth;
+  const h = w * S.vh / S.vw; st.style.width = (h > maxH ? maxH * S.vw / S.vh : w) + 'px';
+  const r = st.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
+  ov.width = Math.round(r.width * dpr); ov.height = Math.round(r.height * dpr);
+}
+window.addEventListener('resize', () => setTimeout(fitStage, 100));
+
+/* ---------- couleur ---------- */
+function rgb2hsv(r, g, b){
+  r /= 255; g /= 255; b /= 255; const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  let h = 0; if (d){ if (mx === r) h = ((g - b) / d) % 6; else if (mx === g) h = (b - r) / d + 2; else h = (r - g) / d + 4; h *= 60; if (h < 0) h += 360; }
+  return [h, mx ? d / mx : 0, mx];
+}
+function matcher(){
+  const t = O.target; if (!t) return null;
+  const tolH = +O.tol, minS = Math.max(0.06, Math.min(0.22, t.s * 0.5)), minV = Math.max(0.1, t.v * 0.35);
+  return (r, g, b) => { const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn; if (!mx) return false;
+    const v = mx / 255, s = d / mx; if (s < minS || v < minV) return false;
+    let h; if (mx === r) h = ((g - b) / d) % 6; else if (mx === g) h = (b - r) / d + 2; else h = (r - g) / d + 4; h *= 60; if (h < 0) h += 360;
+    let dh = Math.abs(h - t.h); if (dh > 180) dh = 360 - dh; return dh <= tolH; };
+}
+
+/* ---------- boucle de suivi ---------- */
+let rvfc = 'requestVideoFrameCallback' in HTMLVideoElement.prototype;
+function loop(){
+  if (!active()) return;
+  const step = (now, meta) => { if (!active()) return;
+    if (S.src === 'file'){ const mt = meta && meta.mediaTime != null ? meta.mediaTime : video.currentTime; if (mt !== S.lastMT){ S.lastMT = mt; frame(mt); } }
+    else frame(meta && meta.mediaTime != null ? meta.mediaTime : performance.now()/1000);
+    schedule(); };
+  const schedule = () => rvfc ? video.requestVideoFrameCallback(step) : requestAnimationFrame(t => step(t, null));
+  schedule();
+}
+function frame(t){
+  if (!S.vw || video.readyState < 2) return;
+  const pw = +O.res, ph = Math.round(pw * S.vh / S.vw);
+  if (proc.width !== pw || proc.height !== ph){ proc.width = pw; proc.height = ph; S.last = null; S.prev = null; S.D = null; }
+  pctx.drawImage(video, 0, 0, pw, ph);
+  const kx = S.vw / pw;
+  let det = null;
+  if (O.target){ const img = pctx.getImageData(0, 0, pw, ph); det = track(img, pw, ph); }
+  S.fpsT.push(t); while (S.fpsT.length > 30) S.fpsT.shift();
+  if (det){
+    const s = {t, x: det.x * kx, y: det.y * kx, a: det.n * kx * kx};
+    S.isPlate = O.obj === 'plate' || (O.obj === 'auto' && det.big);
+    if (S.stage === 'calauto'){ S.areas.push({a: s.a, ext: det.ext * kx, exth: det.exth * kx}); if (S.areas.length >= 20) finishAutoCal(); }
+    if (S.rec){ if (S.t0 == null){ S.t0 = t; S.firstPerf = performance.now(); } S.samples.push({t: t - S.t0, x: s.x, y: s.y, a: s.a, e: det.ext * kx, h: det.exth * kx}); }
+  } else if (S.rec){ if (S.t0 == null){ S.t0 = t; S.firstPerf = performance.now(); } S.samples.push({t: t - S.t0, x: NaN, y: NaN, a: NaN}); }
+  S.frames++;
+  if (S.rec && S.frames % 6 === 0) liveUpdate();
+  draw(det, kx);
+}
+/* Suivi contraint par un cercle de la taille de la cible : les pixels de même couleur hors du disque
+   (plafond, sol, autre disque) sont ignorés, ce qui stabilise le centre et la taille mesurée. */
+function blobAt(d, pw, ph, m, x0, y0){
+  // composante connexe de la couleur cible autour du point touché
+  let sx = -1, sy = -1;
+  for (let r = 0; r <= 6 && sx < 0; r++) for (let dy = -r; dy <= r && sx < 0; dy++) for (let dx = -r; dx <= r; dx++){
+    const x = x0 + dx, y = y0 + dy; if (x < 0 || y < 0 || x >= pw || y >= ph) continue; const i = (y * pw + x) * 4; if (m(d[i], d[i+1], d[i+2])){ sx = x; sy = y; break; } }
+  if (sx < 0) return null;
+  const N = pw * ph, seen = new Uint8Array(N), q = [sy * pw + sx]; seen[q[0]] = 1; const lim = Math.floor(0.35 * N), xs = [], ys = [];
+  while (q.length && xs.length < lim){ const p = q.pop(), x = p % pw, y = (p - x) / pw; xs.push(x); ys.push(y);
+    // voisinage de rayon 2 : franchit les petites coupures (lettres, reflets, bruit) dans la couleur du disque
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++){ if (!dx && !dy) continue; const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= pw || ny >= ph) continue;
+      const n = ny * pw + nx; if (seen[n]) continue; seen[n] = 1; const i = n * 4; if (m(d[i], d[i+1], d[i+2])) q.push(n); } }
+  const pct = (a, p) => { const b = Float32Array.from(a).sort(); return b[Math.min(b.length - 1, Math.floor(p * (b.length - 1)))]; };
+  return {n: xs.length, x: xs.reduce((a, b) => a + b, 0) / xs.length, y: ys.reduce((a, b) => a + b, 0) / ys.length, ev: pct(ys, 0.99) - pct(ys, 0.01) + 1, eh: pct(xs, 0.99) - pct(xs, 0.01) + 1};
+}
+function track(img, pw, ph){
+  const m = matcher(), d = img.data, kx = S.vw / pw;
+  const mask = O.mask ? (S.maskImg && S.maskImg.width === pw ? S.maskImg : (S.maskImg = new ImageData(pw, ph))) : null;
+  if (!S.D && O.Dvid) S.D = O.Dvid / kx;
+  let c;
+  if (S.last && S.lostN < 8){ c = {x: S.last.x, y: S.last.y}; if (S.prev && S.lostN === 0){ c.x += S.last.x - S.prev.x; c.y += S.last.y - S.prev.y; } }
+  else { // recherche globale : fenêtre de la taille de la cible la plus remplie (image intégrale sur une grille de 2 px)
+    const g = 2, gw = Math.ceil(pw / g), gh = Math.ceil(ph / g), I = new Uint32Array((gw + 1) * (gh + 1));
+    for (let gy = 0; gy < gh; gy++){ let row = 0; for (let gx = 0; gx < gw; gx++){ const i = ((gy * g) * pw + gx * g) * 4; row += m(d[i], d[i+1], d[i+2]) ? 1 : 0; I[(gy + 1) * (gw + 1) + gx + 1] = I[gy * (gw + 1) + gx + 1] + row; } }
+    const w = Math.max(3, Math.round((S.D ? 0.7 * S.D : 24) / g)), ref = S.lastGood;
+    let best = -1, bx = 0, by = 0;
+    for (let gy = 0; gy + w <= gh; gy++) for (let gx = 0; gx + w <= gw; gx++){
+      const n = I[(gy + w) * (gw + 1) + gx + w] - I[gy * (gw + 1) + gx + w] - I[(gy + w) * (gw + 1) + gx] + I[gy * (gw + 1) + gx];
+      const cx = (gx + w / 2) * g, cy = (gy + w / 2) * g;
+      const sc = n - (ref ? 1e-3 * Math.hypot(cx - ref.x, cy - ref.y) : 0); // à égalité, la plus proche de la dernière position connue
+      if (sc > best){ best = sc; bx = cx; by = cy; } }
+    if (best < Math.max(3, 0.25 * w * w)){ S.lostN++; return null; } c = {x: bx, y: by};
+  }
+  if (!S.D){ const b = blobAt(d, pw, ph, m, Math.round(c.x), Math.round(c.y)); if (!b || b.n < 6){ S.lostN++; return null; } S.D = Math.max(8, b.ev, b.eh); c = {x: b.x, y: b.y}; }
+  const D = S.D; let R = 0.65 * D, res = null;
+  for (let it = 0; it < 3; it++){
+    const x0 = Math.max(0, Math.floor(c.x - R)), x1 = Math.min(pw, Math.ceil(c.x + R)), y0 = Math.max(0, Math.floor(c.y - R)), y1 = Math.min(ph, Math.ceil(c.y + R)), R2 = R * R;
+    let sx = 0, sy = 0, n = 0; const rows = new Float32Array(Math.max(1, y1 - y0)), cols = new Float32Array(Math.max(1, x1 - x0));
+    for (let y = y0; y < y1; y++){ const dy2 = (y - c.y) * (y - c.y); if (dy2 > R2) continue;
+      for (let x = x0; x < x1; x++){ if ((x - c.x) * (x - c.x) + dy2 > R2) continue; const i = (y * pw + x) * 4;
+        if (m(d[i], d[i+1], d[i+2])){ sx += x; sy += y; n++; rows[y - y0]++; cols[x - x0]++; } } }
+    if (n < Math.max(6, 0.06 * Math.PI * D * D / 4)){ res = null; break; }
+    c = {x: sx / n, y: sy / n}; res = {n, rows, cols}; R = 0.58 * D;
+  }
+  if (!res){ S.lostN++; if (S.lostN >= 8){ S.last = null; S.prev = null; } return null; }
+  if (mask){ mask.data.fill(0); const R2 = R * R; for (let y = Math.max(0, Math.floor(c.y - R)); y < Math.min(ph, Math.ceil(c.y + R)); y++) for (let x = Math.max(0, Math.floor(c.x - R)); x < Math.min(pw, Math.ceil(c.x + R)); x++){
+    if ((x - c.x) ** 2 + (y - c.y) ** 2 > R2) continue; const i = (y * pw + x) * 4; if (m(d[i], d[i+1], d[i+2])){ mask.data[i] = 255; mask.data[i+2] = 255; mask.data[i+3] = 170; } } }
+  const span = h => { let tot = 0; for (const v of h) tot += v; let acc = 0, a = null, b = null; for (let k = 0; k < h.length; k++){ acc += h[k]; if (a == null && acc >= tot * 0.01) a = k; if (b == null && acc >= tot * 0.99){ b = k; break; } } return a != null && b != null ? b - a + 1 : 0; };
+  const ev = span(res.rows), eh = span(res.cols);
+  S.prev = S.last; S.last = c; S.lastGood = c; S.lostN = 0; S.blobR = D / 2;
+  return {x: c.x, y: c.y, n: res.n, ext: ev, exth: eh, big: D > 0.12 * Math.min(pw, ph)};
+}
+function draw(det, kx){
+  const W = ov.width, H = ov.height, sx = W / S.vw; octx.clearRect(0, 0, W, H);
+  if (O.mask && S.maskImg){ const tmp = draw.tmp || (draw.tmp = document.createElement('canvas')); tmp.width = S.maskImg.width; tmp.height = S.maskImg.height; tmp.getContext('2d').putImageData(S.maskImg, 0, 0); octx.imageSmoothingEnabled = false; octx.drawImage(tmp, 0, 0, W, H); }
+  const lw = Math.max(2, W / 400);
+  if (S.calPts.length){ octx.fillStyle = '#f0a83a'; octx.strokeStyle = '#f0a83a'; octx.lineWidth = lw;
+    S.calPts.forEach(p => { octx.beginPath(); octx.arc(p.x * sx, p.y * sx, lw * 4, 0, 7); octx.fill(); });
+    if (S.calPts.length === 2){ octx.beginPath(); octx.moveTo(S.calPts[0].x * sx, S.calPts[0].y * sx); octx.lineTo(S.calPts[1].x * sx, S.calPts[1].y * sx); octx.stroke(); } }
+  // trajectoire récente
+  if (S.rec && S.samples.length > 2){ octx.strokeStyle = 'rgba(56,214,242,.8)'; octx.lineWidth = lw; octx.beginPath(); let st = false;
+    for (let i = Math.max(0, S.samples.length - 240); i < S.samples.length; i++){ const p = S.samples[i]; if (!isFinite(p.x)){ st = false; continue; } if (!st){ octx.moveTo(p.x * sx, p.y * sx); st = true; } else octx.lineTo(p.x * sx, p.y * sx); } octx.stroke(); }
+  if (det){ octx.strokeStyle = '#38d6f2'; octx.lineWidth = lw * 1.5; octx.beginPath();
+    const plate = O.calDv && S.isPlate, rv = (plate ? O.calDv / 2 : (S.D || 8) * kx / 2) * sx, rh = (plate ? (O.calDh || O.calDv) * O.calDv / (O.calDvRaw || O.calDv) / 2 : (S.D || 8) * kx / 2) * sx;
+    octx.ellipse(det.x * kx * sx, det.y * kx * sx, Math.max(lw * 5, rh), Math.max(lw * 5, rv), 0, 0, 7); octx.stroke();
+    octx.beginPath(); octx.moveTo(det.x * kx * sx - lw * 6, det.y * kx * sx); octx.lineTo(det.x * kx * sx + lw * 6, det.y * kx * sx); octx.moveTo(det.x * kx * sx, det.y * kx * sx - lw * 6); octx.lineTo(det.x * kx * sx, det.y * kx * sx + lw * 6); octx.stroke(); }
+  else if (O.target && S.stage !== 'pick'){ octx.fillStyle = 'rgba(239,111,94,.9)'; octx.font = `${Math.round(14 * W / 600)}px system-ui`; octx.fillText('Cible non trouvée', 12, 24 * W / 600); }
+}
+
+/* ---------- interactions sur l'image ---------- */
+ov.addEventListener('pointerdown', ev => {
+  if (!active()) return;
+  const r = ov.getBoundingClientRect(); const fx = (ev.clientX - r.left) / r.width, fy = (ev.clientY - r.top) / r.height;
+  const vx = fx * S.vw, vy = fy * S.vh;
+  if (S.stage === 'pick'){
+    const pw = proc.width, ph = proc.height; pctx.drawImage(video, 0, 0, pw, ph);
+    const px = Math.round(fx * pw), py = Math.round(fy * ph); const d = pctx.getImageData(Math.max(0, px - 4), Math.max(0, py - 4), 9, 9).data;
+    const H = [], Sa = [], Va = []; let cx = 0, cy = 0, r0 = 0, g0 = 0, b0 = 0, n = 0;
+    for (let i = 0; i < d.length; i += 4){ const [h, s, v] = rgb2hsv(d[i], d[i+1], d[i+2]); Sa.push(s); Va.push(v); cx += Math.cos(h * Math.PI / 180) * s; cy += Math.sin(h * Math.PI / 180) * s; r0 += d[i]; g0 += d[i+1]; b0 += d[i+2]; n++; }
+    const med = a => a.sort((x, y) => x - y)[Math.floor(a.length / 2)];
+    let h = Math.atan2(cy, cx) * 180 / Math.PI; if (h < 0) h += 360; const s = med(Sa), v = med(Va);
+    O.target = {h, s, v, rgb:[Math.round(r0/n), Math.round(g0/n), Math.round(b0/n)]};
+    const full = pctx.getImageData(0, 0, pw, ph), mt = matcher(); let b = blobAt(full.data, pw, ph, mt, px, py);
+    // le point touché peut tomber sur une lettre ou un morceau isolé : on teste aussi des points voisins et on garde le plus grand morceau plausible
+    for (const r of [0.03, 0.06, 0.1]) for (let k = 0; k < 8; k++){ const R = r * Math.min(pw, ph), qx = Math.round(px + R * Math.cos(k * Math.PI / 4)), qy = Math.round(py + R * Math.sin(k * Math.PI / 4));
+      const c2 = blobAt(full.data, pw, ph, mt, qx, qy); if (c2 && (!b || c2.n > b.n) && Math.max(c2.ev, c2.eh) < 0.6 * Math.min(pw, ph) && Math.hypot(c2.x - px, c2.y - py) < 0.6 * Math.max(c2.ev, c2.eh)) b = c2; }
+    S.D = b ? Math.max(8, b.ev, b.eh) : null; O.Dvid = S.D ? S.D * S.vw / pw : null; saveO();
+    S.last = b ? {x: b.x, y: b.y} : {x: px, y: py}; S.lastGood = S.last; S.prev = null; S.lostN = 0; S.blobR = S.D ? S.D / 2 : 4;
+    const sw = `<span class="swatch" style="background:rgb(${O.target.rgb})"></span>`;
+    const ar = b ? b.ev / b.eh : 1;
+    if (s < 0.08) hint(`${sw}Couleur presque grise : elle se confond avec le décor. Ciblez une zone colorée du disque ou une pastille vive.`);
+    else if (b && (ar < 0.7 || ar > 1.4)) hint(`${sw}La zone reconnue n'est pas ronde (${Math.round(b.eh * S.vw / pw)} × ${Math.round(b.ev * S.vw / pw)} px) : vous avez sans doute touché une lettre ou un reflet. <b>Touchez à nouveau « Cibler la couleur » puis la surface colorée du disque</b>, loin des inscriptions.`);
+    else hint(`${sw}Couleur mémorisée. Vérifiez que le cercle bleu suit bien le disque ou la pastille. ${O.mPerPx ? 'Prêt : « Démarrer la série ».' : 'Calibrez : « Calibrer automatiquement » (le plus simple si vous suivez le disque entier) ou « Calibrer sur le disque ».'}`);
+    S.stage = O.mPerPx ? 'rec' : 'calib'; steps(); return;
+  }
+  if (S.stage === 'cal1'){ S.calPts = [{x: vx, y: vy}]; S.stage = 'cal2'; hint('Touchez maintenant le <b>bord bas</b> du disque.'); steps(); return; }
+  if (S.stage === 'cal2'){ S.calPts.push({x: vx, y: vy}); const dpx = Math.hypot(S.calPts[1].x - S.calPts[0].x, S.calPts[1].y - S.calPts[0].y);
+    if (dpx < 20){ hint('Les deux points sont trop proches : recommencez « Calibrer sur le disque ».'); S.stage = 'calib'; S.calPts = []; steps(); return; }
+    O.mPerPx = (num(O.diam) / 100) / dpx; O.calMode = 'plate'; saveO();
+    hint(`Calibré : disque de ${fmt(num(O.diam), 0)} cm = ${Math.round(dpx)} px. ${O.target ? 'Prêt : « Démarrer la série ».' : 'Ciblez la pastille.'}`);
+    S.stage = O.target ? 'rec' : 'pick'; setTimeout(() => { S.calPts = []; }, 2500); steps(); return; }
+});
+function finishAutoCal(){
+  const med = arr => { const a = [...arr].sort((x, y) => x - y); return a[Math.floor(a.length / 2)]; };
+  if (S.isPlate){
+    const dv = med(S.areas.map(z => z.ext)), dh = med(S.areas.map(z => z.exth)); O.calDvRaw = dv; O.calDv = dv; O.calDh = dh; O.calV = 5; O.mPerPx = (num(O.diam) / 100) / dv; O.calMode = 'plate-auto';
+    O.Dvid = Math.max(dv, dh); S.D = null;
+    const tilt = dv / dh;
+    hint(`Calibré sur le disque suivi : ${fmt(num(O.diam), 0)} cm ≈ ${Math.round(dv)} px de haut. <b>Vérifiez que le contour bleu épouse le bord du disque</b> ; sinon ajustez-le avec − / +.${tilt < 0.93 ? ` Le disque apparaît ovale (${Math.round(tilt * 100)} %) : le téléphone n'est pas bien en face du disque ; placez-le à hauteur du disque et bien vertical.` : ''}`);
+  } else {
+    const dpx = med(S.areas.map(z => Math.max(z.ext, z.exth))); O.mPerPx = (num(O.mark) / 100) / dpx; O.calMode = 'marker'; O.calDv = null;
+    hint(`Calibré sur la pastille : ${fmt(num(O.mark), 1)} cm ≈ ${fmt(dpx, 1)} px. Moins précis que le disque ; vérifiez l'amplitude obtenue sur une première rep.`);
+  }
+  saveO(); S.areas = []; S.stage = 'rec'; steps();
+}
+
+const adjust = f => { if (!O.calDv) return; O.calDv *= f; O.mPerPx = (num(O.diam) / 100) / O.calDv; saveO(); steps(); if (S.src === 'file' && video.paused) frame(video.currentTime); };
+$('#bAdjM').addEventListener('click', () => adjust(1 / 1.005)); $('#bAdjP').addEventListener('click', () => adjust(1.005));
+
+/* ---------- enregistrement ---------- */
+function beep(f = 880, d = 0.07){
+  if (!O.beep) return; try{ const A = S.audio || (S.audio = new (window.AudioContext || window.webkitAudioContext)()); const o = A.createOscillator(), g = A.createGain();
+    o.frequency.value = f; g.gain.value = 0.15; o.connect(g); g.connect(A.destination); o.start(); o.stop(A.currentTime + d); }catch(e){} }
+const pickMime = () => !window.MediaRecorder ? '' : (['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'].find(m => MediaRecorder.isTypeSupported(m)) || '');
+function startVideoRec(){
+  S.vidBlob = null; S.vidChunks = []; $('#bVid').hidden = true; $('#bShare').hidden = true;
+  if (!O.vid || S.src !== 'cam' || !window.MediaRecorder) return;
+  try{ S.vidMime = pickMime(); const r = new MediaRecorder(S.stream, S.vidMime ? {mimeType: S.vidMime, videoBitsPerSecond: 8e6} : {videoBitsPerSecond: 8e6});
+    r.ondataavailable = e => { if (e.data && e.data.size) S.vidChunks.push(e.data); };
+    r.onstop = () => { S.vidBlob = new Blob(S.vidChunks, {type: r.mimeType || S.vidMime || 'video/webm'}); S.vidMime = S.vidBlob.type; $('#bVid').hidden = false; updateShare(); setStatus(`Vidéo prête (${fmt(S.vidBlob.size / 1e6, 1)} Mo)`); };
+    r.start(1000); S.vidRec = r; S.vidStartPerf = performance.now();
+  }catch(e){ S.vidRec = null; setStatus('Enregistrement vidéo impossible sur ce navigateur'); }
+}
+async function startRec(){
+  S.firstPerf = null; S.ref = []; S.savedId = null;
+  if (S.src === 'file'){ S.last = null; S.lostN = 99; S.lastMT = -1; video.pause(); video.currentTime = 0; await new Promise(r => video.addEventListener('seeked', r, {once:true}));
+    video.playbackRate = +O.fileRate || 0.25; try{ const q = video.getVideoPlaybackQuality(); S.vq0 = q.totalVideoFrames; }catch(e){ S.vq0 = null; } }
+  S.samples = []; S.t0 = null; S.rec = true; S.repsSeen = 0; S.lastMoveT = 0; S.res = null; $('#res').hidden = true;
+  $('#mReps').textContent = '0'; $('#mV').textContent = '–'; $('#mVL').textContent = '–'; $('#mVL').classList.remove('bad');
+  if (S.src === 'file'){ hint('Analyse de la vidéo image par image… (lecture ralentie pour ne perdre aucune image)'); steps(); video.play(); return; }
+  startVideoRec();
+  beep(660, 0.12); hint('Mesure en cours… Faites vos reps. La série s\'arrête seule après ' + O.stop + ' s sans mouvement, ou touchez « Arrêter la série ».' + (S.vidRec ? ' <b>Vidéo en cours d\'enregistrement.</b>' : '')); steps();
+}
+// v5 : en mode disque, l'échelle est recalculée à chaque série à partir de la taille du disque suivi
+// (médiane des hauteurs mesurées pendant la série) × l'ajustement −/+ de l'utilisateur. Plus de calibrage périmé possible.
+function setScale(){
+  const plate = S.isPlate && O.calMode !== 'plate' && O.calMode !== 'marker';
+  const V = S.samples.filter(z => isFinite(z.e) && z.e > 0 && isFinite(z.y));
+  // de préférence les images où la barre est quasi immobile (pas de flou de bougé)
+  const still = V.filter((z, i) => i > 0 && i < V.length - 1 && Math.abs(V[i + 1].y - V[i - 1].y) < 3);
+  const E = (still.length >= 10 ? still : V).map(z => z.e).sort((a, b) => a - b);
+  if (!plate || E.length < 5){ S.scale = null; return O.mPerPx; }
+  const dv = E[Math.floor(E.length / 2)], k = (O.calV === 5 && O.calDvRaw && O.calDv) ? O.calDv / O.calDvRaw : 1, mpp = (num(O.diam) / 100) / (dv * k);
+  S.scale = {dv, k, mpp, stored: O.mPerPx}; return mpp;
+}
+function stopRec(){
+  if (EMBED) setTimeout(() => { const n = S.res ? S.res.reps.length : 0; $('#bSend').textContent = n ? `Valider : ${n} rep${n > 1 ? 's' : ''} dans la séance` : 'Aucune rep détectée'; $('#bSend').disabled = !n; $('#res').scrollIntoView({behavior: 'smooth', block: 'start'}); }, 0);
+  if (S.vidRec && S.vidRec.state !== 'inactive'){ try{ S.vidRec.stop(); }catch(e){} } S.vidRec = null;
+  if (S.src === 'file'){ video.pause(); video.playbackRate = 1; try{ S.fileFrames = S.vq0 != null ? video.getVideoPlaybackQuality().totalVideoFrames - S.vq0 : null; }catch(e){ S.fileFrames = null; } }
+  S.rec = false; const res = analyze(S.samples, setScale(), num(O.rom) / 100); S.res = res; beep(440, 0.2);
+  showResults(res); hint(res.reps.length ? `${res.reps.length} rep${res.reps.length > 1 ? 's' : ''} détectée${res.reps.length > 1 ? 's' : ''}. Renseignez le mouvement et la charge, puis enregistrez.` : 'Aucune rep détectée : vérifiez que la pastille est suivie pendant tout le mouvement et que l\'amplitude minimale n\'est pas trop élevée.'); steps();
+}
+function liveUpdate(){
+  const res = analyze(S.samples, setScale(), num(O.rom) / 100, true); S.lastAnalysis = res;
+  const n = res.reps.length;
+  if (n > S.repsSeen){ S.repsSeen = n; beep(); }
+  $('#mReps').textContent = n;
+  if (n){ const last = res.reps[n - 1]; $('#mV').textContent = fmt(last.mcv); $('#mVL').textContent = res.vl != null ? Math.round(res.vl) + '%' : '–'; $('#mVL').classList.toggle('bad', res.vl >= 20); }
+  const tNow = S.samples.length ? S.samples[S.samples.length - 1].t : 0;
+  if (res.lastMove != null) S.lastMoveT = res.lastMove;
+  if (S.src === 'cam' && n && tNow - S.lastMoveT > num(O.stop)) stopRec();
+  const fps = S.fpsT.length > 2 ? (S.fpsT.length - 1) / (S.fpsT[S.fpsT.length - 1] - S.fpsT[0]) : 0; setStatus(`${Math.round(fps)} i/s · ${fmt(tNow, 1)} s`);
+}
+
+/* ---------- analyse ---------- */
+function analyze(raw, mpp, minRom, live){
+  const out = {reps: [], vl: null, quality: {}, series: null, lastMove: null};
+  if (!mpp || raw.length < 5) return out;
+  // 1. points valides, interpolation des trous courts (< 0,2 s)
+  const P = []; let gap = [];
+  for (const s of raw){
+    if (isFinite(s.y)){ if (gap.length && P.length){ const a = P[P.length - 1]; const dt = s.t - a.t; if (dt < 0.2) gap.forEach(g => P.push({t: g.t, x: a.x + (s.x - a.x) * (g.t - a.t) / dt, y: a.y + (s.y - a.y) * (g.t - a.t) / dt, a: NaN, interp: true})); }
+      gap = []; P.push({t: s.t, x: s.x, y: s.y, a: s.a}); }
+    else gap.push(s);
+  }
+  if (P.length < 5) return out;
+  const y0 = P[0].y, x0 = P[0].x;
+  const T = P.map(p => p.t), Y = P.map(p => (y0 - p.y) * mpp), X = P.map(p => (p.x - x0) * mpp);
+  // 2. lissage (moyenne glissante centrée ±50 ms) puis vitesse par différence centrée, relissée ±40 ms
+  const smooth = (A, h) => A.map((_, i) => { let s = 0, n = 0; for (let j = i; j >= 0 && T[i] - T[j] <= h; j--){ s += A[j]; n++; } for (let j = i + 1; j < A.length && T[j] - T[i] <= h; j++){ s += A[j]; n++; } return s / n; });
+  const Ys = smooth(Y, 0.05);
+  const V0 = Ys.map((_, i) => { const a = Math.max(0, i - 1), b = Math.min(Ys.length - 1, i + 1); return T[b] > T[a] ? (Ys[b] - Ys[a]) / (T[b] - T[a]) : 0; });
+  const V = smooth(V0, 0.04);
+  // 3. extrema avec hystérésis = amplitude minimale (zigzag)
+  const ext = []; let dir = 0, iMin = 0, iMax = 0;
+  for (let i = 1; i < Ys.length; i++){
+    if (Ys[i] > Ys[iMax]) iMax = i; if (Ys[i] < Ys[iMin]) iMin = i;
+    if (dir >= 0 && Ys[iMax] - Ys[i] >= minRom){ if (dir === 0) ext.push({i: iMin, k: 'min'}); ext.push({i: iMax, k: 'max'}); dir = -1; iMin = i; }
+    else if (dir <= 0 && Ys[i] - Ys[iMin] >= minRom){ if (dir === 0) ext.push({i: iMax, k: 'max'}); ext.push({i: iMin, k: 'min'}); dir = 1; iMax = i; }
+  }
+  // dernière montée en cours : en direct on ne la compte qu'une fois la barre stabilisée en haut (vitesse ~0)
+  if (dir === 1 && Ys[iMax] - Ys[iMin] >= minRom){ const settled = Math.abs(V[V.length - 1]) < 0.05 && iMax < Ys.length - 1; if (!live || settled) ext.push({i: iMax, k: 'max'}); }
+  // 4. reps = montées min → max
+  for (let e = 1; e < ext.length; e++){
+    if (ext[e - 1].k !== 'min' || ext[e].k !== 'max') continue;
+    let a = ext[e - 1].i, b = ext[e].i;
+    // bornes affinées : début quand la vitesse dépasse 0,02 m/s, fin quand elle y repasse
+    while (a < b && V[a] < 0.02) a++; while (b > a && V[b] < 0.02) b--;
+    if (b <= a) continue;
+    const rom = Ys[b] - Ys[a], dur = T[b] - T[a]; if (rom < minRom * 0.9 || dur <= 0) continue;
+    let vp = 0, tp = T[a]; for (let i = a; i <= b; i++) if (V[i] > vp){ vp = V[i]; tp = T[i]; }
+    // excentrique précédente
+    let ecc = null; if (e >= 2 && ext[e - 2].k === 'max'){ let ea = ext[e - 2].i, eb = ext[e - 1].i; while (ea < eb && V[ea] > -0.02) ea++; while (eb > ea && V[eb] > -0.02) eb--; const er = Ys[ea] - Ys[eb], ed = T[eb] - T[ea]; if (ed > 0 && er > 0) ecc = {rom: er, dur: ed, mv: er / ed}; }
+    const xs = X.slice(a, b + 1); const drift = Math.max(...xs) - Math.min(...xs);
+    out.reps.push({n: out.reps.length + 1, t0: T[a], t1: T[b], rom, dur, mcv: rom / dur, vpk: vp, tpk: tp - T[a], ecc, drift});
+  }
+  // écarter la sortie / le retour au rack : déplacement surtout horizontal, ou amplitude bien plus courte que les autres reps
+  out.excluded = [];
+  out.reps = out.reps.filter(r => { if (r.drift > 0.6 * r.rom){ out.excluded.push({...r, why:'déplacement surtout horizontal (sortie ou retour au rack)'}); return false; } return true; });
+  if (out.reps.length >= 2){ const roms = out.reps.map(r => r.rom).sort((a, b) => a - b), medR = roms[Math.floor(roms.length / 2)];
+    out.reps = out.reps.filter(r => { if (r.rom < 0.6 * medR){ out.excluded.push({...r, why:'amplitude très inférieure aux autres reps'}); return false; }
+      if (r.rom > 1.6 * medR){ out.excluded.push({...r, why:'amplitude anormalement grande (téléphone ou caméra déplacés ?)'}); return false; } return true; }); }
+  out.reps.forEach((r, i) => r.n = i + 1);
+  if (out.reps.length >= 2){ const best = Math.max(...out.reps.map(r => r.mcv)), last = out.reps[out.reps.length - 1].mcv; out.vl = (best - last) / best * 100; }
+  // dernier instant de mouvement (|v| > 0,05 m/s)
+  for (let i = V.length - 1; i >= 0; i--) if (Math.abs(V[i]) > 0.05){ out.lastMove = T[i]; break; }
+  // qualité
+  const dur = raw.length > 1 ? raw[raw.length - 1].t - raw[0].t : 0; const lost = raw.filter(s => !isFinite(s.y)).length;
+  const A = raw.map(s => isFinite(s.e) && s.e > 0 ? s.e * s.e : s.a).filter(isFinite).sort((a, b) => a - b); const q = p => A.length ? A[Math.floor(p * (A.length - 1))] : NaN;
+  out.quality = {fps: dur > 0 ? (raw.length - 1) / dur : 0, lostPct: raw.length ? lost / raw.length * 100 : 0, sizeVar: A.length ? (Math.sqrt(q(0.9)) - Math.sqrt(q(0.1))) / Math.sqrt(q(0.5)) * 100 : 0, dur};
+  if (!live) out.series = {T, Y: Ys, V, X};
+  return out;
+}
+
+/* ---------- affichage des résultats ---------- */
+function showResults(res){
+  $('#res').hidden = false; const R = res.reps, q = res.quality;
+  $('#mReps').textContent = R.length; $('#mV').textContent = R.length ? fmt(R[R.length - 1].mcv) : '–'; $('#mVL').textContent = res.vl != null ? Math.round(res.vl) + '%' : '–'; $('#mVL').classList.toggle('bad', res.vl >= 20);
+  const warns = [];
+  if (q.fps && q.fps < 25) warns.push(`Seulement ${Math.round(q.fps)} images/s : vitesses maximales peu fiables.`);
+  if (q.lostPct > 10) warns.push(`Cible perdue sur ${Math.round(q.lostPct)} % des images : améliorez l'éclairage ou la tolérance couleur.`);
+  if (q.sizeVar > 15) warns.push(`La taille apparente de la cible a varié de ${Math.round(q.sizeVar)} % : la barre s'est probablement rapprochée ou éloignée du téléphone, les mesures sont faussées.`);
+  if (S.src === 'file' && S.fileFrames && S.samples.length < 0.9 * S.fileFrames) warns.push(`${S.samples.length} images analysées sur ${S.fileFrames} décodées : des images ont été sautées. Relancez l'analyse avec une lecture plus lente (Réglages › Vitesse de lecture).`);
+  const excl = (res.excluded || []).map(r => `Mouvement à ${fmt(r.t0, 1)} s non compté (${fmt(r.rom * 100, 0)} cm) : ${r.why}.`);
+  $('#quality').innerHTML = `<p class="note">${fmt(q.dur, 1)} s enregistrées · ${Math.round(q.fps)} images/s · cible suivie sur ${Math.round(100 - q.lostPct)} % des images.</p>` + (S.scale ? `<p class="note">Échelle de la série : disque de ${fmt(num(O.diam), 0)} cm ≈ ${Math.round(S.scale.dv * S.scale.k)} px (mesuré sur cette série${S.scale.k !== 1 ? ', ajustement ' + (S.scale.k > 1 ? '+' : '') + fmt((S.scale.k - 1) * 100, 1) + ' %' : ''}).</p>` : '') + excl.map(w => `<p class="note">${esc(w)}</p>`).join('') + warns.map(w => `<p class="warn">${esc(w)}</p>`).join('');
+  const best = R.length ? Math.max(...R.map(r => r.mcv)) : 0;
+  $('#tReps').innerHTML = R.length ? `<thead><tr><th>Rep</th><th>Ampl. cm</th><th>V moy m/s</th><th>V max m/s</th><th>Montée s</th><th>Perte</th></tr></thead><tbody>${R.map(r => `<tr class="${r.mcv === best ? 'best' : ''}"><td>${r.n}</td><td>${fmt(r.rom * 100, 1)}</td><td>${fmt(r.mcv)}</td><td>${fmt(r.vpk)}</td><td>${fmt(r.dur)}</td><td>${best ? Math.round((best - r.mcv) / best * 100) + ' %' : ''}</td></tr>`).join('')}</tbody>` : '';
+  drawV(R); drawP(res); renderRef();
+}
+/* ---------- valeurs de référence ---------- */
+function renderRef(){
+  const R = (S.res && S.res.reps) || []; const n = Math.max(R.length, S.ref.length);
+  $('#tRef').innerHTML = n ? `<thead><tr><th>Rep</th><th>Appli</th><th>Réf V moy</th><th>Réf V max</th><th>Réf cm</th><th>Écart</th></tr></thead><tbody>${Array.from({length: n}, (_, i) => { const r = R[i], f = S.ref[i] || {};
+    return `<tr><td>${i + 1}</td><td>${r ? fmt(r.mcv) : '–'}</td>${['mcv', 'vpk', 'rom'].map(k => `<td><input id="ref-${k}-${i}" data-ref="${i}" data-k="${k}" inputmode="decimal" value="${esc(f[k] ?? '')}" aria-label="Référence ${k} rep ${i + 1}"></td>`).join('')}<td class="dcell" id="refd-${i}"></td></tr>`; }).join('')}</tbody>` : '';
+  $('#refDev').value = O.refDev || ''; updateRefDiff();
+}
+function updateRefDiff(){
+  const R = (S.res && S.res.reps) || []; const d = [];
+  S.ref.forEach((f, i) => { const el = $('#refd-' + i); if (!el) return; const v = num(f && f.mcv); if (R[i] && isFinite(v) && v > 0){ const p = (R[i].mcv - v) / v * 100; d.push(p); el.innerHTML = `<span class="${Math.abs(p) <= 5 ? 'dpos' : 'dneg'}">${p > 0 ? '+' : ''}${fmt(p, 1)} %</span>`; } else el.textContent = ''; });
+  $('#refSum').textContent = d.length ? `Écart moyen sur la vitesse moyenne : ${fmt(d.reduce((a, b) => a + b, 0) / d.length, 1)} % (biais) · écart absolu moyen ${fmt(d.reduce((a, b) => a + Math.abs(b), 0) / d.length, 1)} % sur ${d.length} rep${d.length > 1 ? 's' : ''}.` : '';
+}
+$('#tRef').addEventListener('input', e => { const t = e.target; if (t.dataset.ref == null) return; const i = +t.dataset.ref; S.ref[i] = S.ref[i] || {}; S.ref[i][t.dataset.k] = t.value; updateRefDiff(); });
+$('#bRefAdd').addEventListener('click', e => { { S.ref.length = Math.max(S.ref.length, ((S.res && S.res.reps) || []).length) + 1; for (let i = 0; i < S.ref.length; i++) S.ref[i] = S.ref[i] || {}; renderRef(); } });
+$('#refDev').addEventListener('input', e => { O.refDev = e.target.value; saveO(); });
+function drawV(R){
+  const el = $('#cV'); if (!R.length){ el.innerHTML = ''; return; }
+  const W = Math.max(300, el.clientWidth || 600), H = 170, m = {l: 40, r: 10, t: 16, b: 24}, pw = W - m.l - m.r, ph = H - m.t - m.b;
+  const mx = Math.max(0.2, ...R.map(r => r.mcv)) * 1.15, y = v => m.t + ph - v / mx * ph, bw = Math.min(46, pw / R.length * 0.6);
+  let g = ''; const st = mx > 1 ? 0.25 : 0.1; for (let v = 0; v <= mx; v += st) g += `<line class="grid" x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}"/><text class="ax" x="${m.l - 5}" y="${y(v) + 4}" text-anchor="end">${fmt(v, st < 0.2 ? 1 : 2)}</text>`;
+  R.forEach((r, i) => { const cx = m.l + pw / R.length * (i + 0.5); g += `<rect class="bar" x="${cx - bw / 2}" y="${y(r.mcv)}" width="${bw}" height="${y(0) - y(r.mcv)}" rx="3"/><text class="lab" x="${cx}" y="${y(r.mcv) - 4}" text-anchor="middle">${fmt(r.mcv)}</text><text class="ax" x="${cx}" y="${H - 6}" text-anchor="middle">${r.n}</text>`; });
+  el.innerHTML = `<p class="note">Vitesse moyenne concentrique par rep (m/s)</p><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Vitesse moyenne par rep">${g}</svg>`;
+}
+function drawP(res){
+  const el = $('#cP'); const s = res.series; if (!s || s.T.length < 3){ el.innerHTML = ''; return; }
+  const W = Math.max(300, el.clientWidth || 600), H = 170, m = {l: 40, r: 10, t: 10, b: 24}, pw = W - m.l - m.r, ph = H - m.t - m.b;
+  const t1 = s.T[s.T.length - 1] || 1, lo = Math.min(...s.Y), hi = Math.max(...s.Y), span = Math.max(0.1, hi - lo);
+  const X = t => m.l + t / t1 * pw, Yp = v => m.t + ph - (v - lo) / span * ph;
+  let g = ''; res.reps.forEach(r => g += `<rect class="rep" x="${X(r.t0)}" y="${m.t}" width="${Math.max(1, X(r.t1) - X(r.t0))}" height="${ph}"/>`);
+  g += `<path class="pos" d="${s.T.map((t, i) => `${i ? 'L' : 'M'}${X(t).toFixed(1)},${Yp(s.Y[i]).toFixed(1)}`).join(' ')}"/>`;
+  for (let k = 0; k <= 4; k++){ const t = t1 * k / 4; g += `<text class="ax" x="${X(t)}" y="${H - 6}" text-anchor="middle">${fmt(t, 0)} s</text>`; }
+  g += `<text class="ax" x="${m.l - 5}" y="${Yp(hi) + 4}" text-anchor="end">${fmt((hi - lo) * 100, 0)}</text><text class="ax" x="${m.l - 5}" y="${Yp(lo)}" text-anchor="end">0</text>`;
+  el.innerHTML = `<p class="note">Hauteur de la barre (cm) ; zones orangées : montées comptées comme reps</p><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Trajectoire verticale">${g}</svg>`;
+}
+
+/* ---------- historique et exports ---------- */
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+function renderHist(){
+  $('#hist').innerHTML = HIST.length ? [...HIST].reverse().slice(0, 40).map(h => { const R = h.reps; const best = R.length ? Math.max(...R.map(r => r.mcv)) : 0;
+    return `<div class="h"><div><b>${esc(h.ex || 'Sans nom')}</b>${h.load ? ` · ${esc(h.load)} kg` : ''}<small>${esc(h.date)} ${esc(h.time || '')} · ${R.length} reps · meilleure ${fmt(best)} m/s · perte ${h.vl != null ? Math.round(h.vl) + ' %' : '–'}</small></div>
+      <span style="font-family:var(--mono)">${R.map(r => fmt(r.mcv)).join(' · ')}</span><button class="ghost" data-del="${h.id}" aria-label="Supprimer">✕</button></div>`; }).join('')
+    : '<p class="note">Les séries enregistrées apparaissent ici. Elles restent sur ce téléphone ; exportez-les en CSV pour les analyser.</p>';
+}
+function download(name, text){ const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + text], {type: 'text/csv'})); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); }
+const dec = v => (v == null || !isFinite(v)) ? '' : String(Math.round(v * 1000) / 1000).replace('.', ',');
+function exportHist(){
+  if (!HIST.length){ setStatus('Historique vide'); return; }
+  const L = [['Date','Heure','Mouvement','Charge kg','Rep','Amplitude cm','V moy concentrique m/s','V max m/s','Durée montée s','Temps au pic s','V moy excentrique m/s','Perte vs meilleure %','Perte série %','Images/s','Cible perdue %','Variation taille cible %','Calibrage','Source','Réf appareil','Réf V moy m/s','Réf V max m/s','Réf amplitude cm','Écart V moy %','Commentaire'].join(';')];
+  HIST.forEach(h => { const best = Math.max(...h.reps.map(r => r.mcv)); h.reps.forEach(r => L.push([h.date, h.time || '', h.ex, String(h.load || '').replace('.', ','), r.n, dec(r.rom * 100), dec(r.mcv), dec(r.vpk), dec(r.dur), dec(r.tpk), r.ecc ? dec(r.ecc.mv) : '', dec((best - r.mcv) / best * 100), dec(h.vl), dec(h.q.fps), dec(h.q.lostPct), dec(h.q.sizeVar), h.cal, h.src || '', h.refDev || '', ...(f => [dec(f.mcv), dec(f.vpk), dec(f.rom), isFinite(f.mcv) && f.mcv > 0 ? dec((r.mcv - f.mcv) / f.mcv * 100) : ''])((h.ref || [])[r.n - 1] || {}), h.note || ''].map(v => /[;"\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : v).join(';'))); });
+  download(`vitesse-barre_${today()}.csv`, L.join('\r\n'));
+}
+function exportRaw(){
+  const s = S.res && S.res.series; if (!s){ setStatus('Pas de trajectoire à exporter'); return; }
+  const L = ['t s;hauteur m;vitesse m/s;horizontal m']; s.T.forEach((t, i) => L.push([dec(t), dec(s.Y[i]), dec(s.V[i]), dec(s.X[i])].join(';')));
+  download(`trajectoire_${today()}.csv`, L.join('\r\n'));
+}
+
+/* ---------- paquet d'essai ---------- */
+const slug = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w]+/g, '-').replace(/^-|-$/g, '').toLowerCase();
+function trialStem(){ const d = new Date(); return `essai_${today()}_${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}${$('#sEx').value ? '_' + slug($('#sEx').value) : ''}${$('#sLoad').value ? '_' + slug($('#sLoad').value) + 'kg' : ''}`; }
+function trialJSON(){
+  const res = S.res || {}; const set = S.track && S.track.getSettings ? S.track.getSettings() : {};
+  return {format: 'vitesse-barre-essai', version: 1, created: new Date().toISOString(), userAgent: navigator.userAgent,
+    source: S.src === 'file' ? {type: 'fichier', name: S.fileName || ''} : {type: 'camera', mime: S.vidMime || null, video_offset_s: S.firstPerf && S.vidStartPerf ? (S.firstPerf - S.vidStartPerf) / 1000 : null},
+    video: {width: S.vw, height: S.vh, camera_fps_setting: set.frameRate || null},
+    exercise: $('#sEx').value.trim(), load_kg: $('#sLoad').value.trim(), comment: $('#sNote').value.trim(),
+    settings: {obj: O.obj, diam_cm: num(O.diam), marker_cm: num(O.mark), min_rom_cm: num(O.rom), tol_hue: +O.tol, analysis_width_px: +O.res, file_rate: +O.fileRate || 0.5},
+    target: O.target, calibration: {mode: O.calMode, m_per_px: S.scale ? S.scale.mpp : O.mPerPx, m_per_px_calibrage: O.mPerPx, echelle_serie: S.scale ? {plate_px_mediane: S.scale.dv, ajustement: S.scale.k} : null, plate_px_v: O.calDv || null, plate_px_v_auto: O.calDvRaw || null, plate_px_h: O.calDh || null, target_px: O.Dvid || null},
+    samples: S.samples.map(p => [Math.round(p.t * 1e4) / 1e4, isFinite(p.x) ? Math.round(p.x * 10) / 10 : null, isFinite(p.y) ? Math.round(p.y * 10) / 10 : null, isFinite(p.a) ? Math.round(p.a) : null, isFinite(p.e) ? Math.round(p.e * 10) / 10 : null, isFinite(p.h) ? Math.round(p.h * 10) / 10 : null]),
+    samples_columns: ['t_s', 'x_px', 'y_px', 'aire_px2', 'hauteur_cible_px', 'largeur_cible_px'],
+    results: {reps: (res.reps || []).map(r => ({n: r.n, t0: r.t0, t1: r.t1, rom_m: r.rom, mcv: r.mcv, vpk: r.vpk, t_pic_s: r.tpk, dur_s: r.dur, ecc: r.ecc, drift_m: r.drift})),
+      excluded: (res.excluded || []).map(r => ({t0: r.t0, rom_m: r.rom, why: r.why})), vl_pct: res.vl, quality: res.quality},
+    reference: {device: O.refDev || '', reps: S.ref.map((f, i) => ({rep: i + 1, mcv: num(f && f.mcv), vpk: num(f && f.vpk), rom_cm: num(f && f.rom)}))}};
+}
+function dlBlob(name, blob){ const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000); }
+const vidExt = () => /mp4/.test(S.vidMime) ? 'mp4' : 'webm';
+function trialFiles(){ const stem = trialStem(); const files = [new File([JSON.stringify(trialJSON())], stem + '.json', {type: 'application/json'})];
+  if (S.vidBlob) files.unshift(new File([S.vidBlob], stem + '.' + vidExt(), {type: S.vidBlob.type})); return files; }
+function updateShare(){ try{ $('#bShare').hidden = !(navigator.canShare && S.res && navigator.canShare({files: trialFiles()})); }catch(e){ $('#bShare').hidden = true; } }
+$('#bTrial').addEventListener('click', () => { if (!S.res){ setStatus('Pas de série à exporter'); return; } dlBlob(trialStem() + '.json', new Blob([JSON.stringify(trialJSON(), null, 1)], {type: 'application/json'})); setStatus('Essai téléchargé'); });
+$('#bVid').addEventListener('click', () => { if (!S.vidBlob) return; dlBlob(trialStem() + '.' + vidExt(), S.vidBlob); });
+$('#bShare').addEventListener('click', async () => { try{ await navigator.share({files: trialFiles(), title: 'Essai Vitesse Barre'}); }catch(e){ if (e && e.name !== 'AbortError') setStatus('Partage impossible : utilisez les boutons de téléchargement'); } });
+
+/* ---------- analyse d'un fichier vidéo ---------- */
+function closeFile(){ if (S.src !== 'file') return; video.pause(); if (S.fileURL) URL.revokeObjectURL(S.fileURL); video.removeAttribute('src'); video.load(); S.src = null; S.fileURL = null; }
+$('#bFile').addEventListener('click', () => $('#fileIn').click());
+$('#fileIn').addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  if (S.stream) stopCam(); closeFile();
+  S.fileURL = URL.createObjectURL(f); S.fileName = f.name; video.srcObject = null; video.muted = true; video.loop = false; video.src = S.fileURL;
+  try{ await new Promise((ok, ko) => { video.addEventListener('loadeddata', ok, {once:true}); video.addEventListener('error', ko, {once:true}); }); }
+  catch(err){ hint('Impossible de lire cette vidéo dans le navigateur (format non pris en charge). Essayez une vidéo MP4 (H.264).'); return; }
+  video.pause(); S.src = 'file'; S.vw = video.videoWidth; S.vh = video.videoHeight; S.last = null; S.lostN = 99; S.res = null; $('#res').hidden = true;
+  $('#stage').style.aspectRatio = `${S.vw}/${S.vh}`; fitStage(); $('#ph').hidden = true;
+  $('#seek').max = video.duration || 1; $('#seek').value = 0; $('#fileName').textContent = f.name; S.vidBlob = null;
+  S.stage = O.target ? (O.mPerPx ? 'rec' : 'calib') : 'pick';
+  setStatus(`${S.vw}×${S.vh} · ${fmt(video.duration, 1)} s`);
+  hint('Vidéo chargée. Avec le curseur, placez-vous sur une image où la barre est immobile, puis <b>Cibler la couleur</b> et <b>calibrez</b> (la calibration précédente est conservée si le cadrage est le même). Ensuite « Analyser la vidéo ».');
+  loop(); steps(); video.currentTime = 0.05;
+});
+$('#seek').addEventListener('input', e => { if (S.src !== 'file' || S.rec) return; video.currentTime = +e.target.value; });
+video.addEventListener('seeked', () => { if (S.src === 'file' && !S.rec){ $('#seekT').textContent = fmt(video.currentTime, 2) + ' s'; S.lastMT = -1; S.last = null; S.lostN = 99; frame(video.currentTime); } });
+video.addEventListener('timeupdate', () => { if (S.src === 'file'){ $('#seekT').textContent = fmt(video.currentTime, 2) + ' s'; if (!S.rec) $('#seek').value = video.currentTime; else setStatus(`Analyse : ${Math.round(video.currentTime / (video.duration || 1) * 100)} %`); } });
+video.addEventListener('ended', () => { if (S.src === 'file' && S.rec) stopRec(); });
+
+/* ---------- liaisons ---------- */
+$('#bCam').addEventListener('click', () => S.stream ? stopCam() : startCam());
+$('#bPick').addEventListener('click', () => { S.stage = 'pick'; S.last = null; S.prev = null; hint('Touchez la <b>pastille</b> sur l\'image.'); steps(); });
+$('#bCal').addEventListener('click', () => { S.stage = 'cal1'; S.calPts = []; hint(`Touchez le <b>bord haut</b> du disque (diamètre réglé : ${fmt(num(O.diam), 0)} cm, modifiable dans les réglages).`); steps(); });
+$('#bCalAuto').addEventListener('click', () => { S.stage = 'calauto'; S.areas = [];
+  if (S.src === 'file' && video.paused){ for (let i = 0; i < 20 && S.stage === 'calauto'; i++) frame(video.currentTime); return; } hint(S.isPlate ? `Mesure du disque suivi (${fmt(num(O.diam), 0)} cm) : barre immobile une seconde, <b>disque entièrement visible</b> (pas masqué par un montant du rack ni par le corps)…` : `Mesure de la pastille (${fmt(num(O.mark), 1)} cm) : gardez la barre immobile une seconde…`); steps(); });
+$('#bRec').addEventListener('click', () => { if (S.rec) stopRec(); else startRec(); });
+$('#bSave').addEventListener('click', () => {
+  if (!S.res || !S.res.reps.length){ setStatus('Aucune rep à enregistrer'); return; }
+  const d = new Date(); const h = {id: S.savedId || 'h' + Date.now().toString(36), date: today(), time: `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`,
+    ex: $('#sEx').value.trim(), load: $('#sLoad').value.trim(), reps: S.res.reps.map(r => ({n: r.n, rom: r.rom, mcv: r.mcv, vpk: r.vpk, dur: r.dur, tpk: r.tpk, ecc: r.ecc})),
+    ref: S.ref.map(f => ({mcv: num(f && f.mcv), vpk: num(f && f.vpk), rom: num(f && f.rom)})), refDev: O.refDev || '', note: $('#sNote').value.trim(), src: S.src === 'file' ? S.fileName : 'caméra',
+    vl: S.res.vl, q: S.res.quality, cal: O.calMode === 'plate' ? `disque ${O.diam} cm (touches)` : O.calMode === 'plate-auto' ? `disque ${O.diam} cm (auto)` : `pastille ${O.mark} cm`};
+  const ix = HIST.findIndex(x => x.id === h.id); if (ix >= 0) HIST[ix] = h; else HIST.push(h); S.savedId = h.id; if (HIST.length > 500) HIST.shift(); saveH(); renderHist(); setStatus(ix >= 0 ? 'Série mise à jour' : 'Série enregistrée'); $('#bSave').disabled = true; setTimeout(() => $('#bSave').disabled = false, 1500);
+  try{ localStorage.setItem(LS + '-ex', h.ex); }catch(e){}
+});
+$('#bRaw').addEventListener('click', exportRaw);
+$('#bExp').addEventListener('click', exportHist);
+$('#hist').addEventListener('click', e => { const b = e.target.closest('[data-del]'); if (!b) return;
+  if (b.dataset.armed){ HIST = HIST.filter(h => h.id !== b.dataset.del); saveH(); renderHist(); }
+  else { b.dataset.armed = '1'; b.textContent = 'Confirmer'; b.style.color = 'var(--bad)'; setTimeout(() => { if (b.isConnected){ delete b.dataset.armed; b.textContent = '✕'; b.style.color = ''; } }, 3000); } });
+const bind = (id, key, conv = v => v) => { const el = $(id); if (el.type === 'checkbox') el.checked = !!O[key]; else el.value = O[key];
+  el.addEventListener(el.type === 'checkbox' || el.tagName === 'SELECT' ? 'change' : 'input', () => { O[key] = el.type === 'checkbox' ? el.checked : conv(el.value); saveO();
+    if (key === 'diam' || key === 'mark'){ O.mPerPx = null; saveO(); hint('Dimension modifiée : refaites le calibrage.'); steps(); }
+    if (key === 'torch') applyTorch(); if (key === 'shortExp') applyExposure(); if (key === 'res') S.last = null; if (key === 'fps' && S.stream){ stopCam(); startCam(); } }); };
+bind('#oObj', 'obj'); bind('#oDiam', 'diam'); bind('#oMark', 'mark'); bind('#oRom', 'rom'); bind('#oTol', 'tol'); bind('#oRes', 'res'); bind('#oFps', 'fps'); bind('#oStop', 'stop');
+bind('#oExp', 'shortExp'); bind('#oBeep', 'beep'); bind('#oVid', 'vid'); bind('#oRate', 'fileRate'); bind('#oMask', 'mask'); bind('#oTorch', 'torch');
+try{ $('#sEx').value = localStorage.getItem(LS + '-ex') || ''; }catch(e){}
+document.addEventListener('visibilitychange', async () => { if (document.visibilityState === 'visible' && S.stream && !S.wake){ try{ S.wake = await navigator.wakeLock.request('screen'); }catch(e){} } else if (document.visibilityState === 'hidden') S.wake = null; });
+if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ hint('Ce navigateur ne donne pas accès à la caméra. Ouvrez l\'appli en https dans Safari (iPhone) ou Chrome (Android).'); $('#bCam').disabled = true; }
+renderHist(); steps();
+window.__vb = {analyze, S, O, trialJSON, stopCam}; // accès pour les tests et pour l'appli hôte
+/* ---------- mode intégré (ouvert depuis Planif Muscu : vbt.html?embed=1&ex=…&kg=…&key=…) ---------- */
+if (EMBED){
+  document.body.classList.add('embed'); $('#bClose').hidden = false; $('#bSend').hidden = false; $('#bSend').disabled = true;
+  const ex = QS.get('ex') || '', kg = QS.get('kg') || '', set = QS.get('set') || '';
+  if (ex || kg){ $('#ctx').hidden = false; $('#ctx').textContent = [ex, set && 'série ' + set, kg && kg + ' kg'].filter(Boolean).join(' · '); }
+  $('#sEx').value = ex; $('#sLoad').value = kg;
+  const post = m => { try{ parent.postMessage(m, location.origin); }catch(e){} };
+  $('#bClose').addEventListener('click', () => { if (S.rec) stopRec(); stopCam(); post({type: 'vbt-close'}); });
+  $('#bSend').addEventListener('click', () => {
+    if (!S.res || !S.res.reps.length) return;
+    const r3 = v => v == null || !isFinite(v) ? null : Math.round(v * 1000) / 1000;
+    post({type: 'vbt-set', key: QS.get('key') || '', reps: S.res.reps.map(r => ({mcv: r3(r.mcv), vpk: r3(r.vpk), rom: r3(r.rom), dur: r3(r.dur)})), vl: S.res.vl, q: S.res.quality});
+    stopCam();
+  });
+  window.addEventListener('pagehide', () => { try{ stopCam(); }catch(e){} });
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) startCam();
+}
+if (!EMBED && 'serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js').catch(() => {});
+})();
+</script>
+</body>
+</html>

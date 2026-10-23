@@ -186,6 +186,14 @@ body.logmode #weekbar, body.logmode #customBox, body.logmode #bkExp, body.logmod
 .sethead{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);text-align:center;margin-bottom:-4px}
 .setrow select{min-height:44px;font-family:var(--mono);font-size:15px;text-align:center;padding:4px 2px;width:100%}
 .setrow select.set{border-color:var(--gold)}
+.lcard.vbt .setrow,.lcard.vbt .sethead{grid-template-columns:22px minmax(0,1fr) minmax(0,1fr) 58px 42px 46px}
+.setrow button.cam{min-height:44px;padding:4px 0;font-size:17px}
+.vline{grid-column:1/-1;font-size:12px;color:var(--muted);font-family:var(--mono);margin:-2px 0 2px 28px;line-height:1.35}
+.vline b{color:var(--ink);font-weight:600}
+.vline .hi{color:var(--danger)}
+.logtop button[data-lgvbt][aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+#vbtOv{position:fixed;inset:0;z-index:60;background:var(--bg);display:flex;flex-direction:column}
+#vbtOv iframe{border:0;flex:1;width:100%;height:100%}
 .setrow .sn{font-family:var(--mono);color:var(--muted);text-align:center}
 .setrow input{min-height:44px;text-align:center;font-family:var(--mono);font-size:16px;width:100%}
 .setrow .x,.setrow .u{color:var(--muted);font-size:12px;text-align:center}
@@ -891,24 +899,65 @@ function logStats(s, l){
     ((l && l.sets[en.id]) || []).forEach(x => { if (x.d){ done++; tonD += setTon(x, en); } }); });
   return {plan, done, tonP, tonD};
 }
+/* ---------- vitesse caméra (option) ---------- */
+const vbtOn = () => { if (!STANDALONE) return false; try{ return localStorage.getItem(LS + '-vbt') === '1'; }catch(e){ return false; } };
+/* stats de vitesse d'une série : perte = %Vdec (meilleure → dernière rep), score = 100 × (1 − moyenne / meilleure) */
+function vStats(v){
+  const m = v && Array.isArray(v.mcv) ? v.mcv.filter(x => x > 0) : []; if (!m.length) return null;
+  const best = Math.max(...m), mean = m.reduce((a, b) => a + b, 0) / m.length, last = m[m.length - 1];
+  return {n: m.length, best, mean, first: m[0], last, vdec: m.length >= 2 ? (best - last) / best * 100 : null, score: m.length >= 2 ? (1 - mean / best) * 100 : null};
+}
+const fmtV = v => (v == null || !isFinite(v)) ? '–' : v.toLocaleString('fr-FR', {minimumFractionDigits:2, maximumFractionDigits:2});
+function vLine(x){ const st = vStats(x && x.v); if (!st) return '';
+  return `<div class="vline">📷 ${st.n} rep${st.n > 1 ? 's' : ''} · moy <b>${fmtV(st.mean)}</b> · meilleure ${fmtV(st.best)} · dernière ${fmtV(st.last)} m/s${st.vdec != null ? ` · %Vdec <b class="${st.vdec >= 20 ? 'hi' : ''}">${Math.round(st.vdec)} %</b>` : ''}<br>${x.v.mcv.map(fmtV).join(' · ')}</div>`; }
+function openVbt(rid, k, en, x){
+  closeVbt();
+  const ld = (x && x.l) || (en.plan && en.plan.load) || '';
+  S.vbtCtx = {key: logKey(cur(), cur().weeks[S.wk], logCtx().s), rid, k, tag: uid()};
+  const q = new URLSearchParams({embed: '1', ex: en.ex, kg: String(ld), set: String(k + 1), key: S.vbtCtx.tag});
+  const ov = document.createElement('div'); ov.id = 'vbtOv';
+  ov.innerHTML = `<iframe src="vbt.html?${q}" allow="camera; autoplay; fullscreen" title="Mesure de la vitesse à la caméra"></iframe>`;
+  document.body.appendChild(ov); document.documentElement.style.overflow = 'hidden';
+}
+function closeVbt(){ const ov = $('#vbtOv'); if (!ov) return;
+  try{ const w = ov.querySelector('iframe').contentWindow; if (w && w.__vb) w.__vb.stopCam(); }catch(e){}
+  ov.remove(); document.documentElement.style.overflow = ''; }
+window.addEventListener('message', e => {
+  if (e.origin !== location.origin || !e.data || typeof e.data !== 'object') return;
+  if (e.data.type === 'vbt-close'){ closeVbt(); S.vbtCtx = null; return; }
+  if (e.data.type !== 'vbt-set' || !S.vbtCtx || e.data.key !== S.vbtCtx.tag) return;
+  const c = S.vbtCtx; S.vbtCtx = null; closeVbt();
+  const p = cur(); if (!p) return; const {w, s} = logCtx(); if (!s || logKey(p, w, s) !== c.key){ setStatus('Séance changée entre-temps : mesure non enregistrée', true); return; }
+  const l = getLog(p, w, s, true); const en = findEntry(s, l, c.rid); if (!en) return;
+  const reps = (e.data.reps || []).filter(r => r && r.mcv > 0); if (!reps.length) return;
+  const arr = l.sets[c.rid] = l.sets[c.rid] || []; while (arr.length <= c.k) arr.push({r:'', l:'', d:false});
+  const xx = arr[c.k];
+  xx.v = {mcv: reps.map(r => r.mcv), vpk: reps.map(r => r.vpk), rom: reps.map(r => r.rom), src: 'camera', at: Date.now()};
+  xx.r = String(reps.length);
+  if (xx.l === '' || xx.l == null){ const prev = (arr.slice(0, c.k).reverse().find(z => z.l) || {}).l; xx.l = prev || (en.plan ? (en.plan.load || '') : ''); }
+  xx.d = true; snapMeta(l, en); touchLog(c.key); renderMain();
+  const st = vStats(xx.v); setStatus(`Série ${c.k + 1} : ${st.n} reps · ${fmtV(st.mean)} m/s${st.vdec != null ? ` · %Vdec ${Math.round(st.vdec)} %` : ''}`);
+});
 function logCard(en, l){
   const e = byName.get(norm(en.ex)); const pc = en.plan ? rowCalc(en.plan) : null;
   const logged = (l && l.sets[en.id]) || [];
   const n = Math.max(pc ? Math.round(pc.sets) || 0 : 0, logged.length, 1);
   const doneN = logged.filter(x => x.d).length;
   const ph = (k, f) => { for (let j = k-1; j >= 0; j--) if (logged[j] && logged[j][f]) return logged[j][f]; return en.plan ? (f === 'r' ? en.plan.reps : en.plan.load) : ''; };
+  const vb = vbtOn();
   const sets = Array.from({length:n}, (_, k) => { const x = logged[k] || {}; return `<div class="setrow ${x.d?'done':''}">
       <span class="sn">${k+1}</span>
       <input id="lg-r-${en.id}-${k}" data-lgf="r" data-row="${en.id}" data-k="${k}" inputmode="decimal" value="${esc(x.r ?? '')}" placeholder="${esc(ph(k,'r') || 'reps')}" aria-label="Reps série ${k+1}">
       <input id="lg-l-${en.id}-${k}" data-lgf="l" data-row="${en.id}" data-k="${k}" inputmode="decimal" value="${esc(x.l ?? '')}" placeholder="${esc(ph(k,'l') || 'kg')}" aria-label="Charge série ${k+1} en kg">
       <select id="lg-e-${en.id}-${k}" data-lgf="e" data-row="${en.id}" data-k="${k}" class="${x.e ? 'set' : ''}" aria-label="RPE série ${k+1}"><option value="">–</option>${RPE_OPTS.map(v => `<option ${String(x.e)===v?'selected':''}>${v}</option>`).join('')}</select>
-      <button class="tick" data-lgdone="${en.id}:${k}" aria-pressed="${!!x.d}" aria-label="Série ${k+1} faite">✓</button></div>`; }).join('');
+      ${vb ? `<button class="cam" data-lgcam="${en.id}:${k}" aria-label="Mesurer la série ${k+1} à la caméra" title="Mesurer la vitesse à la caméra">📷</button>` : ''}
+      <button class="tick" data-lgdone="${en.id}:${k}" aria-pressed="${!!x.d}" aria-label="Série ${k+1} faite">✓</button>${vLine(x)}</div>`; }).join('');
   const tag = en.kind === 'Ajouté' ? `<span class="kind add">Ajouté</span>` : en.kind === 'Remplacé' ? `<span class="kind sub">Remplacé</span>` : '';
-  return `<article class="lcard ${pc && doneN >= Math.round(pc.sets) && pc.sets ? 'complete' : ''}">
+  return `<article class="lcard ${vb ? 'vbt' : ''} ${pc && doneN >= Math.round(pc.sets) && pc.sets ? 'complete' : ''}">
     <div class="lhead">${e ? `<span class="lvl l${e.lvl}">${e.lvl}</span>` : ''}<h4>${esc(en.ex)}</h4><span class="presc">${esc(presc(en.plan))}</span></div>
     ${tag || en.kind === 'Remplacé' ? `<div class="lmus">${tag}${en.kind === 'Remplacé' ? ` à la place de ${esc(en.planEx)}` : ' hors programme'}</div>` : ''}
     ${e ? `<div class="lmus">${esc(e.p.join(', '))}</div>` : ''}
-    <div class="sethead"><span>#</span><span>Reps</span><span>kg</span><span title="RPE : 10 = échec, 9 = 1 rep en réserve, 8 = 2 reps…">RPE</span><span></span></div>
+    <div class="sethead"><span>#</span><span>Reps</span><span>kg</span><span title="RPE : 10 = échec, 9 = 1 rep en réserve, 8 = 2 reps…">RPE</span>${vb ? '<span title="Vitesse caméra">Vit.</span>' : ''}<span></span></div>
     ${sets}
     ${l && l.rpe[en.id] && !logged.some(x => x.e) ? `<div class="lmus">RPE d'exercice saisi auparavant : ${esc(l.rpe[en.id])}</div>` : ''}
     <div class="lfoot"><button data-lgadd="${en.id}">+ Série</button>
@@ -927,6 +976,7 @@ function summaryHtml(p, w, s, l){
   const rl = weekCalc({sessions:[{rows: ens.map(en => { const d = ((l.sets[en.id])||[]).filter(x => x.d); const t = d.reduce((a,x) => a + setTon(x, en), 0);
     return {ex:en.ex, sets:d.length, reps:1, load: d.length ? t/d.length : 0}; })}]}, coef);
   const mus = GROUPS.filter(g => pl.m[g].sets || rl.m[g].sets);
+  const hasV = ens.some(en => ((l.sets[en.id]) || []).some(x => x.d && vStats(x.v)));
   const delta = (a, b) => { const d = Math.round((b - a)*10)/10; return d ? `<span class="${d < 0 ? 'neg' : 'pos'}">${d > 0 ? '+' : ''}${fmt(d,1)}</span>` : '<span class="mini">=</span>'; };
   return `<section class="step">
     <h3>Séance terminée</h3>
@@ -934,9 +984,10 @@ function summaryHtml(p, w, s, l){
     <div class="kpis"><div class="kpi"><b>${st.done} <span class="mini">/ ${st.plan}</span></b><span>Séries faites / prévues</span></div>
       <div class="kpi"><b>${fmtT(st.tonD)}</b><span>Tonnage (prévu ${fmtT(st.tonP)})</span></div></div>
     <div class="tablebox"><table class="mus sumtab">
-      <thead><tr><th>Exercice</th><th>Prévu</th><th>Réalisé (reps×kg @RPE)</th><th>RPE moy.</th></tr></thead>
+      <thead><tr><th>Exercice</th><th>Prévu</th><th>Réalisé (reps×kg @RPE)</th><th>RPE moy.</th>${hasV ? '<th>Vitesse moy. m/s · %Vdec</th>' : ''}</tr></thead>
       <tbody>${ens.map(en => `<tr><td>${esc(en.ex)}${en.kind !== 'Prévu' ? `<br><span class="kind ${en.kind==='Ajouté'?'add':'sub'}">${en.kind}</span>${en.kind==='Remplacé' ? ` <span class="mini">${esc(en.planEx)}</span>` : ''}` : ''}</td>
-        <td class="mini">${esc(presc(en.plan) || '—')}</td><td class="num">${esc(fmtDone(l.sets[en.id] || [], en))}</td><td class="num">${(() => { const v = ((l.sets[en.id]) || []).filter(x => x.d).map(x => setRpe(x, l, en.id)).filter(Boolean); return v.length ? fmt(v.reduce((a,b) => a+b, 0)/v.length, 1) : ''; })()}</td></tr>`).join('')}</tbody></table></div>
+        <td class="mini">${esc(presc(en.plan) || '—')}</td><td class="num">${esc(fmtDone(l.sets[en.id] || [], en))}</td><td class="num">${(() => { const v = ((l.sets[en.id]) || []).filter(x => x.d).map(x => setRpe(x, l, en.id)).filter(Boolean); return v.length ? fmt(v.reduce((a,b) => a+b, 0)/v.length, 1) : ''; })()}</td>${hasV ? `<td class="num">${((l.sets[en.id]) || []).filter(x => x.d).map(x => { const st = vStats(x.v); return st ? `${fmtV(st.mean)}${st.vdec != null ? ` · ${Math.round(st.vdec)} %` : ''}` : '–'; }).join('<br>')}</td>` : ''}</tr>`).join('')}</tbody></table></div>
+    ${hasV ? '<p class="note">Vitesse : moyenne des vitesses moyennes concentriques de la série (mesure caméra). %Vdec = perte de vitesse de la meilleure à la dernière rep.</p>' : ''}
     ${mus.length ? `<div class="tablebox"><table class="mus">
       <thead><tr><th>Muscle</th><th>Prévu</th><th>Réalisé</th><th>Écart</th></tr></thead>
       <tbody>${mus.map(g => `<tr><td>${esc(g)}</td><td class="num">${fmt(pl.m[g].sets,1)}</td><td class="num">${fmt(rl.m[g].sets,1)}</td><td class="num">${delta(pl.m[g].sets, rl.m[g].sets)}</td></tr>`).join('')}</tbody></table></div>
@@ -953,7 +1004,7 @@ function logHtml(p){
   const s = w.sessions[S.lgS];
   const top = `<div class="logtop">
       <div class="line"><select id="lgWeek" aria-label="Semaine" style="flex:1">${p.weeks.map((x,i) => `<option value="${i}" ${i===S.wk?'selected':''}>S${i+1}${x.cycle ? ' · ' + esc(x.cycle) : ''}</option>`).join('')}</select>
-        <button data-lgexit>Quitter</button></div>
+        ${STANDALONE ? `<button data-lgvbt aria-pressed="${vbtOn()}" title="Afficher un bouton caméra sur chaque série pour mesurer reps et vitesse">📷 Vitesse${vbtOn() ? ' : oui' : ''}</button>` : ''}<button data-lgexit>Quitter</button></div>
       <div class="sesschips">${w.sessions.map((x,i) => { const lx = getLog(p, w, x, false); return `<button data-lgs="${i}" aria-pressed="${i===S.lgS}">${esc(x.name)}${lx && lx.finished ? ' ✓' : ''}</button>`; }).join('')}<button data-lgnewsess>+ Séance</button></div>
     </div>`;
   if (!s) return top + `<div class="empty"><h3>Pas de séance</h3><p class="note">Cette semaine ne contient aucune séance. Créez-en une pour commencer.</p><button class="primary" data-lgnewsess>Créer une séance</button></div>`;
@@ -976,6 +1027,7 @@ function logCtx(){ const p = cur(); const w = p.weeks[S.wk]; const s = w.session
 function findEntry(s, l, id){ return logEntries(s, l).find(en => en.id === id); }
 function logClick(t, p){
   if (t.dataset.lgexit !== undefined){ S.view = 'week'; try{ history.replaceState(null, '', location.pathname); }catch(e){} renderAll(); return true; }
+  if (t.dataset.lgvbt !== undefined){ try{ localStorage.setItem(LS + '-vbt', vbtOn() ? '0' : '1'); }catch(e){} renderMain(); setStatus(vbtOn() ? 'Mesure caméra activée : touchez 📷 sur une série' : 'Mesure caméra désactivée'); return true; }
   if (t.dataset.lgs !== undefined){ S.lgS = +t.dataset.lgs; renderMain(); window.scrollTo(0, 0); return true; }
   if (t.dataset.lgnewsess !== undefined){ const w = p.weeks[S.wk]; w.sessions.push(newSession('Séance ' + String.fromCharCode(65 + w.sessions.length))); w.sessions[w.sessions.length-1].rows = []; S.lgS = w.sessions.length-1; touch(); renderMain(); return true; }
   if (t.dataset.lgexp !== undefined){ const {w, s} = logCtx(); exportLogsCsv(t.dataset.lgexp === 'one' ? [logKey(p, w, s)] : null); return true; }
@@ -996,6 +1048,8 @@ function logClick(t, p){
       if (x.r === '' || x.r == null) x.r = (prev && prev.r) || (en.plan ? (en.plan.reps || '') : '');
       if (x.l === '' || x.l == null) x.l = (prev && prev.l) || (en.plan ? (en.plan.load || '') : ''); }
     snapMeta(l, en); touchLog(K); keepFocus(() => renderMain()); return true; }
+  if (t.dataset.lgcam !== undefined){ const [rid, k] = t.dataset.lgcam.split(':'); const l = getLog(p, w, s, false); const en = findEntry(s, l, rid); if (!en) return true;
+    openVbt(rid, +k, en, l && l.sets[rid] && l.sets[rid][+k]); return true; }
   if (t.dataset.lgadd !== undefined){ const rid = t.dataset.lgadd; const l = getLog(p, w, s, true); const en = findEntry(s, l, rid); if (!en) return true;
     const arr = l.sets[rid] = l.sets[rid] || []; const n = Math.max(Math.round(num(en.plan && en.plan.sets)), arr.length, 1); while (arr.length < n) arr.push({r:'', l:'', d:false}); arr.push({r:'', l:'', d:false});
     snapMeta(l, en); touchLog(K); renderMain(); return true; }
@@ -1028,7 +1082,7 @@ async function saveText(fname, text){
 }
 function exportLogsCsv(keys){
   const dec = v => (v === '' || v == null) ? '' : String(v).replace('.', ',');
-  const H = ['Date','Programme','Semaine','Cycle','Séance','Exercice prévu','Exercice réalisé','Type','Série','Statut','Reps prévues','Charge prévue kg','Reps réalisées','Charge réalisée kg','Tonnage kg','RPE','Reps en réserve','3RM estimé brut kg','3RM corrigé RIR kg','Niveau','Muscles principaux','Muscles secondaires','Séance terminée','Notes séance'];
+  const H = ['Date','Programme','Semaine','Cycle','Séance','Exercice prévu','Exercice réalisé','Type','Série','Statut','Reps prévues','Charge prévue kg','Reps réalisées','Charge réalisée kg','Tonnage kg','RPE','Reps en réserve','3RM estimé brut kg','3RM corrigé RIR kg','Niveau','Muscles principaux','Muscles secondaires','Séance terminée','Notes séance','Reps caméra','V moy série m/s','V meilleure rep m/s','V première rep m/s','V dernière rep m/s','%Vdec (meilleure→dernière)','Score Vdec % (1−moy/meilleure)','V moy par rep m/s','V max par rep m/s','Amplitude par rep cm'];
   const out = [H.join(';')]; let nLogs = 0;
   const list = (keys || [...S.logs.keys()]).map(k => [k, S.logs.get(k)]).filter(([k, l]) => l)
     .sort((a, b) => String(a[1].date).localeCompare(String(b[1].date)) || String(a[1].session).localeCompare(String(b[1].session)));
@@ -1058,7 +1112,9 @@ function exportLogsCsv(keys){
           did ? dec(Math.round(num(rr)*num(ll)*10)/10) : '', ...(() => { const rp = setRpe(x, l, en.id); const est = did ? estRM(num(rr), num(ll), rp) : null;
             const r1 = v => v != null ? dec(Math.round(v*10)/10) : '';
             return [dec(rp ?? ''), rp != null ? dec(rirOf(rp)) : '', est ? r1(est.raw) : '', est ? r1(est.cor) : '']; })(), e ? e.lvl : '', e ? e.p.join(', ') : '', e ? e.s.join(', ') : '',
-          l.finished ? 'Oui' : 'Non', l.note || ''].map(csvCell).join(';'));
+          l.finished ? 'Oui' : 'Non', l.note || '', ...(() => { const st = vStats(x.v); if (!st) return ['','','','','','','','','',''];
+            const r2 = v => v != null && isFinite(v) ? dec(Math.round(v*1000)/1000) : '', r1 = v => v != null && isFinite(v) ? dec(Math.round(v*10)/10) : '';
+            return [st.n, r2(st.mean), r2(st.best), r2(st.first), r2(st.last), r1(st.vdec), r1(st.score), x.v.mcv.map(r2).join(' | '), (x.v.vpk || []).map(r2).join(' | '), (x.v.rom || []).map(v => r1(v*100)).join(' | ')]; })()].map(csvCell).join(';'));
       }
     }
   }
