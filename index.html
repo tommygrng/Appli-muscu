@@ -166,7 +166,7 @@ details.custom summary{cursor:pointer;font-weight:600}
 
 .exin{display:flex;gap:4px;align-items:center}
 .layout.solo{grid-template-columns:minmax(0,1fr)!important;max-width:720px;margin:0 auto;width:100%}
-body.logmode #weekbar, body.logmode #customBox, body.logmode #bkExp, body.logmode #bkImp, body.logmode #dupProg, body.logmode #delProg, body.logmode #newProg, body.logmode #progName{display:none}
+body.logmode #weekbar, body.logmode #customBox, body.logmode #bkExp, body.logmode #bkImp, body.logmode #bkSync, body.logmode #syncBox, body.logmode #dupProg, body.logmode #delProg, body.logmode #newProg, body.logmode #progName{display:none}
 .logtop{display:flex;flex-direction:column;gap:10px;position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding-block:6px}
 .logtop .line{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .logtop select,.logtop input[type=date]{min-height:40px}
@@ -286,6 +286,10 @@ ol.rank li:last-child{border-bottom:0}
   .mvt td:first-child,.bestrm td:first-child{white-space:normal!important}
   .mvt .mname,.bestrm .mname{text-align:left}}
 body.statsmode .weekactions, body.statsmode #customBox{display:none}
+#bkSync.on{border-color:var(--ok);color:var(--ok)}
+#syncBox ol{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;font-size:14px}
+#syncBox .line{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+#syncBox input{flex:1 1 260px;min-height:40px;font-family:var(--mono)}
 .step{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:10px;min-width:0}
 .step h3{font-family:var(--display);font-size:22px;margin:0;display:flex;gap:10px;align-items:baseline}
 .step h3 .no{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--ink);color:var(--bg);font-size:16px}
@@ -356,11 +360,15 @@ body.statsmode .weekactions, body.statsmode #customBox{display:none}
       <button id="newProg" class="primary">Nouveau programme</button>
       <button id="dupProg">Dupliquer</button>
       <button id="delProg" class="danger">Supprimer</button>
-      <button id="bkExp" hidden title="Enregistrer tous vos programmes et séances dans un fichier">Sauvegarder</button><button id="bkImp" hidden title="Recharger un fichier de sauvegarde">Restaurer</button><input type="file" id="bkFile" accept=".json,application/json" hidden>
+      <button id="bkExp" hidden title="Enregistrer tous vos programmes et séances dans un fichier">Sauvegarder</button><button id="bkImp" hidden title="Recharger un fichier de sauvegarde">Restaurer</button><input type="file" id="bkFile" accept=".json,application/json" hidden><button id="bkSync" hidden title="Synchroniser automatiquement téléphone et ordinateur">Synchro</button>
     </div>
     <span id="status" class="status">Chargement…</span>
   </header>
 
+  <section class="step" id="syncBox" hidden>
+    <h3 style="margin:0">Synchronisation téléphone ⇄ ordinateur</h3>
+    <div id="syncBody"></div>
+  </section>
   <nav class="weekbar" id="weekbar"></nav>
 
   <div class="layout">
@@ -423,7 +431,7 @@ const esc = s => String(s??'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;',
 const clone = o => JSON.parse(JSON.stringify(o));
 
 /* ---------- état ---------- */
-const S = { profile:{weights:[], goals:[], bwGoal:{kg:'', date:''}, updated:0}, logs:new Map(), lgS:0, programs:new Map(), curId:null, wk:0, view:'week', custom:[], db:null, dl:null, mode:'local' };
+const S = { profile:{weights:[], goals:[], bwGoal:{kg:'', date:''}, updated:0}, logs:new Map(), lgS:0, programs:new Map(), curId:null, wk:0, view:'week', custom:[], db:null, dl:null, mode:'local', tomb:{} };
 const byName = new Map();
 function reindex(){
   byName.clear();
@@ -440,9 +448,9 @@ const newProgram = () => ({id:uid(), name:'Nouveau programme', coef:0.5, created
 
 /* ---------- persistance ---------- */
 const LS = 'planif-muscu-v1';
-function saveLocal(){ try{ localStorage.setItem(LS, JSON.stringify({programs:[...S.programs.values()], custom:S.custom, curId:S.curId, logs:[...S.logs.entries()], profile:S.profile})); }catch(e){} }
+function saveLocal(){ try{ localStorage.setItem(LS, JSON.stringify({programs:[...S.programs.values()], custom:S.custom, curId:S.curId, logs:[...S.logs.entries()], profile:S.profile, tomb:S.tomb})); }catch(e){} }
 function loadLocal(){ try{ const d = JSON.parse(localStorage.getItem(LS)||'null'); if(!d) return;
-  (d.programs||[]).forEach(p => S.programs.set(p.id, p)); S.custom = d.custom||[]; S.curId = d.curId; S.logs = new Map(d.logs||[]); if (d.profile) S.profile = d.profile; }catch(e){} }
+  (d.programs||[]).forEach(p => S.programs.set(p.id, p)); S.custom = d.custom||[]; S.curId = d.curId; S.logs = new Map(d.logs||[]); if (d.profile) S.profile = d.profile; S.tomb = d.tomb || {}; }catch(e){} }
 function rememberCur(){ try{ localStorage.setItem(LS+'-cur', S.curId||''); }catch(e){} }
 function lastCur(){ try{ return localStorage.getItem(LS+'-cur'); }catch(e){ return null; } }
 
@@ -464,7 +472,7 @@ async function flush(){
       for (const id of lids){ const l = S.logs.get(id); if (l) await S.db.collection('logs').doc(id).set(clone(l)); }
     }
     saveLocal();
-    setStatus(S.db ? 'Enregistré' : LOCAL_TXT);
+    setStatus(S.db ? 'Enregistré' : LOCAL_TXT); syncSoon();
   }catch(e){
     ids.forEach(i => pending.add(i)); lids.forEach(i => pendLogs.add(i)); if (cust) customDirty = true; if (prof) profileDirty = true;
     setStatus(e && e.code === 'not_granted' ? 'Lecture seule : vous ne pouvez pas modifier ce programme' :
@@ -479,7 +487,7 @@ async function init(){
   try{ db = window.claude && window.claude.use ? await window.claude.use('db') : null; }catch(e){ db = null; }
   try{ S.dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null; }catch(e){ S.dl = null; }
   if (location.hash === '#seance') S.view = 'log';
-  if (!db){ S.mode = 'local'; loadLocal(); reindex(); pickCur(); setStatus(LOCAL_TXT); renderAll(); return; }
+  if (!db){ S.mode = 'local'; loadLocal(); reindex(); pickCur(); setStatus(LOCAL_TXT); renderAll(); if (STANDALONE) syncSoon(200); return; }
   S.db = db; S.mode = 'db';
   let first = true;
   db.collection('programs').onSnapshot(snap => {
@@ -764,7 +772,7 @@ document.addEventListener('click', e => {
   if (t.id === 'newProg' || t.dataset.act === 'newProg') return addProgram(newProgram());
   if (t.id === 'dupProg' && p){ const c = clone(p); c.id = uid(); c.name = p.name + ' (copie)'; c.created = c.updated = Date.now(); return addProgram(c); }
   if (t.id === 'delProg' && p) return armConfirm(t, 'Confirmer la suppression', async () => {
-    S.programs.delete(p.id); pending.delete(p.id); S.curId = null; pickCur(); rememberCur(); renderAll(); saveLocal();
+    S.programs.delete(p.id); pending.delete(p.id); S.tomb[p.id] = Date.now(); syncSoon(); S.curId = null; pickCur(); rememberCur(); renderAll(); saveLocal();
     try{ if (S.db) await S.db.collection('programs').doc(p.id).delete(); setStatus('Programme supprimé'); }catch(err){ setStatus('Suppression impossible', true); }
   });
   if (t.dataset.wk !== undefined){ S.view = 'week'; S.wk = +t.dataset.wk; renderTabs(); renderMain(); renderAside(); return; }
@@ -1804,10 +1812,111 @@ async function exportCsv(p){
 
 /* ---------- version autonome : sauvegarde / restauration ---------- */
 function fileDownload(name, blob){ const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); }
+/* ---------- fusion de données (restauration et synchronisation) ---------- */
+function snapshot(){
+  return {app:'planif-muscu', version:1, exported:new Date().toISOString(),
+    programs:[...S.programs.values()].sort((a, b) => String(a.id).localeCompare(String(b.id))), custom:S.custom,
+    logs:[...S.logs.entries()].sort((a, b) => a[0].localeCompare(b[0])), profile:S.profile, tomb:S.tomb};
+}
+/* le plus récent l'emporte, élément par élément (programme, séance réalisée) ; suppressions propagées */
+function mergeData(d){
+  let np = 0, nl = 0, other = 0;
+  Object.entries(d.tomb || {}).forEach(([id, ts]) => { if (!(S.tomb[id] >= ts)){ S.tomb[id] = ts; other++; }
+    const o = S.programs.get(id); if (o && (o.updated || 0) <= ts){ S.programs.delete(id); np++; } });
+  (d.programs||[]).forEach(p => { if (S.tomb[p.id] >= (p.updated || 0)) return; const o = S.programs.get(p.id); if (!o || (p.updated||0) > (o.updated||0)){ S.programs.set(p.id, p); np++; } });
+  (d.logs||[]).forEach(([k, l]) => { const o = S.logs.get(k); if (!o || (l.updated||0) > (o.updated||0)){ S.logs.set(k, l); nl++; } });
+  (d.custom||[]).forEach(c => { if (!S.custom.some(x => norm(x.name) === norm(c.name))){ S.custom.push(c); other++; } });
+  if (d.profile){ const P = ensureProfile(), Q = d.profile; const before = JSON.stringify(P); const byD = new Map(P.weights.map(x => [x.date, x]));
+    (Q.weights||[]).forEach(x => { if (!byD.has(x.date) || (Q.updated||0) > (P.updated||0)) byD.set(x.date, x); }); P.weights = [...byD.values()].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    if ((Q.updated||0) > (P.updated||0)){ P.goals = Q.goals || P.goals; P.bwGoal = Q.bwGoal || P.bwGoal; P.updated = Q.updated; }
+    if (JSON.stringify(P) !== before) other++; }
+  return {np, nl, other};
+}
+
+/* ---------- synchronisation automatique via un Gist GitHub privé ---------- */
+const SYNC_FILE = 'planif-muscu-sync.json', SYNC_DESC = 'Planif Muscu – synchronisation automatique (ne pas modifier)';
+const SY = {cfg:{}, busy:false, again:false, timer:null, msg:''};
+try{ SY.cfg = JSON.parse(localStorage.getItem(LS + '-sync') || '{}') || {}; }catch(e){ SY.cfg = {}; }
+const saveSY = () => { try{ localStorage.setItem(LS + '-sync', JSON.stringify(SY.cfg)); }catch(e){} };
+const dataKey = d => JSON.stringify({p:d.programs, c:d.custom, l:d.logs, f:d.profile, t:d.tomb || {}});
+async function gh(path, opt = {}){
+  const r = await fetch('https://api.github.com' + path, {...opt, cache:'no-store', headers:{Authorization:'Bearer ' + SY.cfg.token, Accept:'application/vnd.github+json', ...(opt.body ? {'Content-Type':'application/json'} : {})}});
+  if (!r.ok){ const e = new Error('GitHub ' + r.status); e.status = r.status; throw e; }
+  return r.status === 204 ? null : r.json();
+}
+async function findGist(){
+  for (let pg = 1; pg <= 10; pg++){ const list = await gh(`/gists?per_page=100&page=${pg}`);
+    const g = list.find(x => x.files && x.files[SYNC_FILE]); if (g) return {id:g.id, found:true}; if (list.length < 100) break; }
+  const g = await gh('/gists', {method:'POST', body:JSON.stringify({description:SYNC_DESC, public:false, files:{[SYNC_FILE]:{content:JSON.stringify(snapshot())}}})});
+  return {id:g.id, found:false};
+}
+function syncSoon(ms = 4000){ if (!STANDALONE || !SY.cfg.token) return; clearTimeout(SY.timer); SY.timer = setTimeout(() => syncNow(), ms); }
+function syncLabel(){ const b = $('#bkSync'); if (!b) return; b.classList.toggle('on', !!SY.cfg.token); b.textContent = SY.cfg.token ? (SY.busy ? 'Synchro…' : SY.err ? 'Synchro ⚠' : 'Synchro ✓') : 'Synchro'; }
+const hhmm = ts => ts ? new Date(ts).toLocaleString('fr-FR', {day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : 'jamais';
+async function syncNow(manual){
+  if (!SY.cfg.token) return;
+  if (SY.busy){ SY.again = true; return; }
+  if (pending.size || pendLogs.size || saving){ syncSoon(1500); return; }
+  SY.busy = true; SY.err = ''; syncLabel();
+  try{
+    if (!SY.cfg.gist){ const g = await findGist(); SY.cfg.gist = g.id; saveSY(); }
+    let g; try{ g = await gh('/gists/' + SY.cfg.gist); }catch(e){ if (e.status === 404){ SY.cfg.gist = null; saveSY(); const n = await findGist(); SY.cfg.gist = n.id; saveSY(); g = await gh('/gists/' + SY.cfg.gist); } else throw e; }
+    const f = g.files && g.files[SYNC_FILE];
+    let txt = f ? f.content : ''; if (f && f.truncated) txt = await (await fetch(f.raw_url, {cache:'no-store'})).text();
+    let remote = null; try{ remote = txt ? JSON.parse(txt) : null; }catch(e){ remote = null; }
+    const ch = remote && remote.app === 'planif-muscu' ? mergeData(remote) : {np:0, nl:0, other:0};
+    const mine = snapshot();
+    if (!remote || dataKey(remote) !== dataKey(mine)){
+      await gh('/gists/' + SY.cfg.gist, {method:'PATCH', body:JSON.stringify({files:{[SYNC_FILE]:{content:JSON.stringify(mine)}}})}); }
+    if (ch.np || ch.nl || ch.other){
+      reindex(); pickCur(); saveLocal();
+      const typing = document.activeElement && document.activeElement.closest('#main input, #main textarea, #main select');
+      if (typing) renderTabsAndAside(); else renderAll();
+      setStatus(`Synchronisé : ${ch.np} programme${ch.np > 1 ? 's' : ''}, ${ch.nl} séance${ch.nl > 1 ? 's' : ''} mis à jour`);
+    } else if (manual) setStatus('Synchronisé, rien de nouveau');
+    SY.cfg.last = Date.now(); saveSY();
+  }catch(e){
+    SY.err = e.status === 401 ? 'Jeton refusé par GitHub (expiré ou révoqué) : créez-en un nouveau.' : e.status === 403 ? 'GitHub refuse l\'accès : le jeton doit avoir le droit « gist ».' : 'Hors ligne : la synchro reprendra automatiquement.';
+    if (manual || e.status === 401 || e.status === 403) setStatus(SY.err, true);
+    if (!e.status) syncSoon(30000);
+  }finally{ SY.busy = false; syncLabel(); if (!$('#syncBox').hidden) renderSync(); if (SY.again){ SY.again = false; syncSoon(500); } }
+}
+function renderSync(){
+  const c = SY.cfg;
+  $('#syncBody').innerHTML = c.token ? `
+    <p class="note">Activée sur cet appareil. Vos programmes, séances, poids et objectifs sont envoyés dans un <b>Gist GitHub privé</b> et fusionnés automatiquement : à l'ouverture de l'appli, quelques secondes après chaque modification, et quand vous revenez sur l'appli.</p>
+    <p class="note">Dernière synchro réussie : <b>${esc(hhmm(c.last))}</b>${SY.err ? ` · <span style="color:var(--danger)">${esc(SY.err)}</span>` : ''}</p>
+    <div class="line"><button class="primary" id="syNow">Synchroniser maintenant</button><button class="ghost" id="syOff">Désactiver sur cet appareil</button><button class="ghost" id="syClose">Fermer</button></div>`
+  : `<p class="note">Une fois sur le téléphone et une fois sur l'ordinateur (2 minutes) :</p>
+    <ol>
+      <li>Sur GitHub, créez un jeton limité aux gists : <a href="https://github.com/settings/tokens/new?scopes=gist&description=Planif%20Muscu%20synchro" target="_blank" rel="noopener">ouvrir la page de création</a> → choisissez une expiration (ex. « No expiration » ou 1 an) → <b>Generate token</b> → copiez-le (commence par <code>ghp_</code>).</li>
+      <li>Collez-le ici puis « Activer ». Utilisez le <b>même jeton</b> sur l'autre appareil (ou créez-en un second).</li>
+    </ol>
+    <div class="line"><input id="syTok" type="password" autocomplete="off" placeholder="ghp_…" aria-label="Jeton GitHub"><button class="primary" id="syOn">Activer</button><button class="ghost" id="syClose">Fermer</button></div>
+    <p class="note">Le jeton reste sur cet appareil et ne donne accès qu'à vos gists (pas à vos dépôts). Les données ne sont pas perdues : chaque appareil garde sa copie, et la synchro garde la version la plus récente de chaque programme et de chaque séance.</p>`;
+}
+document.addEventListener('click', async e => {
+  const t = e.target.closest('#bkSync, #syOn, #syOff, #syNow, #syClose'); if (!t) return;
+  if (t.id === 'bkSync'){ const b = $('#syncBox'); b.hidden = !b.hidden; if (!b.hidden){ renderSync(); b.scrollIntoView({block:'nearest'}); } return; }
+  if (t.id === 'syClose'){ $('#syncBox').hidden = true; return; }
+  if (t.id === 'syNow'){ syncNow(true); return; }
+  if (t.id === 'syOff'){ SY.cfg = {}; saveSY(); syncLabel(); renderSync(); setStatus('Synchro désactivée sur cet appareil (vos données restent ici)'); return; }
+  if (t.id === 'syOn'){ const tok = $('#syTok').value.trim(); if (!tok){ setStatus('Collez d\'abord le jeton', true); return; }
+    SY.cfg = {token:tok}; t.disabled = true; setStatus('Connexion à GitHub…');
+    try{ await gh('/gists?per_page=1'); }catch(err){ SY.cfg = {}; t.disabled = false; setStatus(err.status === 401 ? 'Jeton invalide' : err.status ? 'Jeton sans le droit « gist »' : 'Pas de connexion internet', true); return; }
+    saveSY(); syncLabel(); await syncNow(true); renderSync(); }
+});
+document.addEventListener('visibilitychange', async () => { if (!SY.cfg.token) return;
+  if (document.visibilityState === 'visible'){ syncSoon(300); return; }
+  // en quittant l'appli : envoyer tout de suite les dernières modifications
+  clearTimeout(SY.timer); for (let i = 0; i < 20 && (saving || pending.size || pendLogs.size); i++) await new Promise(r => setTimeout(r, 100)); syncNow(); });
+setInterval(() => { if (SY.cfg.token && document.visibilityState === 'visible') syncNow(); }, 120000);
+
 if (STANDALONE){
+  $('#bkSync').hidden = false; syncLabel();
   $('#bkExp').hidden = false; $('#bkImp').hidden = false;
   $('#bkExp').addEventListener('click', () => {
-    const data = {app:'planif-muscu', version:1, exported:new Date().toISOString(), programs:[...S.programs.values()], custom:S.custom, logs:[...S.logs.entries()], profile:S.profile};
+    const data = snapshot();
     fileDownload(`planif-muscu-sauvegarde-${today()}.json`, new Blob([JSON.stringify(data)], {type:'application/json'}));
     setStatus('Sauvegarde téléchargée');
   });
@@ -1817,14 +1926,8 @@ if (STANDALONE){
     try{
       const d = JSON.parse(await f.text());
       if (d.app !== 'planif-muscu') throw new Error('format');
-      let np = 0, nl = 0;
-      (d.programs||[]).forEach(p => { const o = S.programs.get(p.id); if (!o || (p.updated||0) > (o.updated||0)){ S.programs.set(p.id, p); np++; } });
-      (d.logs||[]).forEach(([k, l]) => { const o = S.logs.get(k); if (!o || (l.updated||0) > (o.updated||0)){ S.logs.set(k, l); nl++; } });
-      (d.custom||[]).forEach(c => { if (!S.custom.some(x => norm(x.name) === norm(c.name))) S.custom.push(c); });
-      if (d.profile){ const P = ensureProfile(), Q = d.profile; const byD = new Map(P.weights.map(x => [x.date, x]));
-        (Q.weights||[]).forEach(x => { if (!byD.has(x.date) || (Q.updated||0) > (P.updated||0)) byD.set(x.date, x); }); P.weights = [...byD.values()];
-        if ((Q.updated||0) > (P.updated||0)){ P.goals = Q.goals || P.goals; P.bwGoal = Q.bwGoal || P.bwGoal; P.updated = Q.updated; } }
-      reindex(); pickCur(); saveLocal(); renderAll();
+      const {np, nl} = mergeData(d);
+      reindex(); pickCur(); saveLocal(); renderAll(); syncSoon();
       setStatus(`Restauré : ${np} programme${np>1?'s':''} et ${nl} séance${nl>1?'s':''} mis à jour`);
     }catch(err){ setStatus('Ce fichier n\'est pas une sauvegarde Planif Muscu', true); }
   });

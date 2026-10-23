@@ -42,5 +42,13 @@ Sous la série s'affichent : vitesse moyenne (moyenne des vitesses moyennes conc
 
 Vous pouvez toujours corriger le nombre de reps à la main après la mesure.
 
+## Synchronisation automatique téléphone ⇄ ordinateur
+
+Bouton **Synchro** en haut de l'appli. À faire une fois sur chaque appareil :
+1. Créez un jeton GitHub limité aux gists (lien direct dans l'appli : github.com/settings/tokens/new?scopes=gist), copiez-le.
+2. Collez-le dans l'appli, « Activer ». Même jeton sur le téléphone et sur l'ordinateur.
+
+Ensuite tout est automatique : les données (programmes, séances réalisées, mesures caméra, poids, objectifs) sont stockées dans un Gist GitHub **privé** nommé `planif-muscu-sync.json` et fusionnées à l'ouverture, quelques secondes après chaque modification, en quittant l'appli et toutes les 2 minutes. La version la plus récente de chaque programme et de chaque séance l'emporte ; les suppressions de programmes sont propagées. Chaque appareil garde aussi sa copie locale (fonctionne hors ligne, la synchro reprend au retour du réseau). Le bouton affiche « Synchro ✓ » quand tout va bien, « Synchro ⚠ » en cas de problème (jeton expiré, hors ligne).
+
 ## Mise à jour de l'appli
 Remplacer `index.html` en ligne. Pour forcer le rechargement chez tous les utilisateurs, augmenter le numéro de version (`planif-muscu-v8` → `v9`…) dans `sw.js`.
