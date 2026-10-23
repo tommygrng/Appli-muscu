@@ -200,6 +200,30 @@ textarea{font:inherit;color:inherit;border:1px solid var(--line);background:var(
 .sumtab td{white-space:normal!important;vertical-align:top}
 .sumtab td:first-child{min-width:130px}
 .neg{color:var(--danger)} .pos{color:var(--ok)}
+.stfilters{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px}
+.stfilters select{width:100%;min-height:38px}
+.kpis4{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.kpi span{display:block}
+.chart{position:relative;width:100%;min-height:120px}
+.chart svg{display:block;overflow:visible;touch-action:pan-y}
+.chart .grid{stroke:var(--line);stroke-width:1}
+.chart .ax{fill:var(--muted);font-size:11px;font-family:var(--mono)}
+.chart .lab{fill:var(--ink);font-size:12px;font-family:var(--mono);font-weight:500}
+.chart .ln{fill:none;stroke:var(--accent);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.chart .dot{fill:var(--accent);stroke:var(--surface);stroke-width:2}
+.chart .dot.on{r:6}
+.chart .mk{fill:var(--accent)}
+.chart .mk.on{fill:color-mix(in srgb,var(--accent) 75%,var(--ink))}
+.chart .guide{stroke:var(--muted);stroke-width:1;stroke-dasharray:3 3}
+.chart .hit{fill:transparent;cursor:crosshair}
+.chart .tip{position:absolute;pointer-events:none;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:6px 9px;font-size:12px;line-height:1.4;box-shadow:0 4px 14px color-mix(in srgb,var(--ink) 14%,transparent);max-width:220px;z-index:2}
+h4.sub{margin:6px 0 0;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:600}
+details.data summary{cursor:pointer;font-size:12px;color:var(--muted)}
+.mvt td.bar i{display:block;height:8px;border-radius:4px;background:var(--accent);min-width:2px}
+.mvt tr.sel td{background:var(--sunk)}
+.mvt td.bar{min-width:70px;width:30%}
+@media (max-width:600px){.mvt td.bar,.mvt th:nth-child(3){display:none}}
+body.statsmode .weekactions, body.statsmode #customBox{display:none}
 .step{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:10px;min-width:0}
 .step h3{font-family:var(--display);font-size:22px;margin:0;display:flex;gap:10px;align-items:baseline}
 .step h3 .no{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--ink);color:var(--bg);font-size:16px}
@@ -472,7 +496,7 @@ function renderTabs(){
   });
   bar.innerHTML = `<div class="tabs" role="tablist">
       <div class="cgroup"><div class="clabel">Préparation</div><div class="ctabs"><button class="tab cycle" role="tab" data-view="plan" aria-selected="${S.view==='plan'}">Plan de volume</button></div></div>
-      <div class="cgroup"><div class="clabel">À la salle</div><div class="ctabs"><button class="tab cycle" role="tab" data-view="log" aria-selected="${S.view==='log'}">Mode séance</button></div></div>
+      <div class="cgroup"><div class="clabel">À la salle</div><div class="ctabs"><button class="tab cycle" role="tab" data-view="log" aria-selected="${S.view==='log'}">Mode séance</button><button class="tab cycle" role="tab" data-view="stats" aria-selected="${S.view==='stats'}">Suivi</button></div></div>
       ${groups.map(g => `
       <div class="cgroup"><div class="clabel" title="${esc(g.cycle)}">${esc(g.cycle||'Sans cycle')}</div>
       <div class="ctabs">${g.idx.map(i => `<button class="tab" role="tab" data-wk="${i}" aria-selected="${S.view==='week'&&S.wk===i}">S${i+1}</button>`).join('')}</div></div>`).join('')}
@@ -512,8 +536,10 @@ function renderMain(){
     return;
   }
   document.body.classList.toggle('logmode', S.view === 'log');
-  $('.layout').classList.toggle('solo', S.view === 'log');
+  $('.layout').classList.toggle('solo', S.view === 'log' || S.view === 'stats');
+  document.body.classList.toggle('statsmode', S.view === 'stats');
   if (S.view === 'log'){ main.innerHTML = logHtml(p); return; }
+  if (S.view === 'stats'){ main.innerHTML = statsHtml(); drawCharts(); return; }
   if (S.view === 'cycle'){ main.innerHTML = cycleHtml(p); return; }
   if (S.view === 'plan'){ main.innerHTML = planMainHtml(p); return; }
   const w = p.weeks[S.wk];
@@ -578,7 +604,7 @@ function snapshotUndo(label){ const p = cur(); S.undo = {pid:p.id, wk:S.wk, week
 function renderAside(){
   const p = cur(); const a = $('#aside');
   if (!p){ a.innerHTML = `<h3>Bilan</h3><p class="note">Le bilan des séries et du tonnage par muscle s'affiche ici dès qu'une séance contient des exercices.</p>`; return; }
-  a.hidden = S.view === 'log'; if (a.hidden) return;
+  a.hidden = S.view === 'log' || S.view === 'stats'; if (a.hidden) return;
   const coef = p.coef ?? 0.5;
   if (S.view === 'plan'){ a.innerHTML = planAsideHtml(p, coef); return; }
   const isWeek = S.view === 'week';
@@ -667,7 +693,8 @@ document.addEventListener('click', e => {
     try{ if (S.db) await S.db.collection('programs').doc(p.id).delete(); setStatus('Programme supprimé'); }catch(err){ setStatus('Suppression impossible', true); }
   });
   if (t.dataset.wk !== undefined){ S.view = 'week'; S.wk = +t.dataset.wk; renderTabs(); renderMain(); renderAside(); return; }
-  if (t.dataset.view){ S.view = t.dataset.view; renderTabs(); renderMain(); renderAside(); return; }
+  if (t.dataset.view){ S.view = t.dataset.view; renderTabs(); renderMain(); renderAside(); if (S.view === 'stats' || S.view === 'log') window.scrollTo(0, 0); return; }
+  if (t.dataset.stex !== undefined){ ST.ex = t.dataset.stex; saveST(); renderMain(); return; }
   if (!p) return;
   if (t.id === 'addWeek'){ p.weeks.push(copyWeek(p.weeks[p.weeks.length-1], S.pct)); S.wk = p.weeks.length-1; S.view='week'; touch(); renderAll(); return; }
   if (t.id === 'dupWeek'){ p.weeks.push(copyWeek(p.weeks[S.wk], S.pct)); S.wk = p.weeks.length-1; touch(); renderAll(); return; }
@@ -820,7 +847,7 @@ function summaryHtml(p, w, s, l){
       <p class="note">Séries pondérées : 1 pour un muscle principal, ${coef} pour un muscle secondaire.</p>` : ''}
     ${l.note ? `<p class="note"><b>Notes :</b> ${esc(l.note)}</p>` : ''}
     <div class="line"><button class="primary" data-lgexp="one">Exporter cette séance (CSV)</button><button data-lgexp="all">Exporter toutes mes séances (CSV)</button></div>
-    <div class="line"><button class="ghost" data-lgreopen>Rouvrir la saisie</button></div>
+    <div class="line"><button data-view="stats">Voir ma progression</button><button class="ghost" data-lgreopen>Rouvrir la saisie</button></div>
   </section>`;
 }
 function logHtml(p){
@@ -941,6 +968,180 @@ function exportLogsCsv(keys){
   const tag = keys && keys.length === 1 ? (() => { const l = S.logs.get(keys[0]); return `seance_${l.date}_${String(l.session||'').replace(/[^\w\-]+/g,'_')}`; })() : `seances_realisees_${today()}`;
   saveText(`${tag}.csv`, '﻿' + out.join('\r\n'));
 }
+
+/* ---------- suivi / progression ---------- */
+const REP_SEC = 4;            // durée d'une répétition (s), hypothèse utilisateur
+const RM_MAX_REPS = 12;       // au-delà, l'estimation du 1RM devient peu fiable
+const epley = (load, reps) => reps === 1 ? load : load * (1 + reps/30);
+const ST = {prog:'all', ex:'', per:'all'};
+try{ Object.assign(ST, JSON.parse(localStorage.getItem(LS+'-stats')||'{}')); }catch(e){}
+const saveST = () => { try{ localStorage.setItem(LS+'-stats', JSON.stringify(ST)); }catch(e){} };
+const ddmm = d => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d||''); return m ? `${m[3]}/${m[2]}` : (d||'?'); };
+
+function resolveLog(l0){
+  const p = S.programs.get(l0.pid); const wi = p ? p.weeks.findIndex(x => x.id === l0.wid) : -1;
+  const w = wi >= 0 ? p.weeks[wi] : null; const s = w ? w.sessions.find(x => x.id === l0.sid) : null;
+  const l = {...l0, sets:l0.sets||{}, rpe:l0.rpe||{}, sub:l0.sub||{}, extra:l0.extra||[], meta:l0.meta||{}};
+  let ens = s ? logEntries(s, l) : [];
+  const seen = new Set(ens.map(e => e.id));
+  Object.keys(l.meta).forEach(id => { if (seen.has(id)) return; const m = l.meta[id];
+    ens.push({id, ex:m.ex, planEx:m.planEx, kind:m.kind, plan: m.kind === 'Ajouté' ? null : {ex:m.planEx, sets:m.sets, reps:m.reps, load:m.load}}); });
+  ens = ens.map(en => { const m = l.meta[en.id]; return (m && en.plan) ? {...en, plan:{ex:m.planEx, sets:m.sets, reps:m.reps, load:m.load}} : en; });
+  return {p, wi, w, s, l, ens};
+}
+function collectSessions(){
+  const out = [];
+  const minDate = ST.per === 'all' ? '' : (() => { const d = new Date(); d.setDate(d.getDate() - +ST.per); return d.toISOString().slice(0,10); })();
+  for (const [k, l0] of S.logs){
+    if (!l0 || !l0.finished) continue;
+    if (ST.prog !== 'all' && l0.pid !== ST.prog) continue;
+    if (minDate && String(l0.date) < minDate) continue;
+    const R = resolveLog(l0); const l = R.l;
+    const exs = [];
+    for (const en of R.ens){
+      const sets = ((l.sets[en.id]) || []).filter(x => x.d).map(x => ({r: num(x.r || (en.plan && en.plan.reps)), l: num(x.l || (en.plan && en.plan.load))})).filter(x => x.r > 0);
+      if (!sets.length) continue;
+      let best = null;
+      sets.forEach(x => { if (x.l > 0 && x.r >= 1 && x.r <= RM_MAX_REPS){ const v = epley(x.l, x.r); if (!best || v > best.v) best = {v, r:x.r, l:x.l}; } });
+      const reps = sets.reduce((a,x) => a + x.r, 0);
+      exs.push({name:en.ex, sets, reps, ton: sets.reduce((a,x) => a + x.r*x.l, 0), dur: reps*REP_SEC, rpe: num(l.rpe[en.id]) || null, best});
+    }
+    if (!exs.length) continue;
+    const dur = exs.reduce((a,e) => a + e.dur, 0);
+    const wr = exs.filter(e => e.rpe); const wdur = wr.reduce((a,e) => a + e.dur, 0);
+    const rpe = wdur ? wr.reduce((a,e) => a + e.rpe*e.dur, 0) / wdur : null;
+    out.push({key:k, date:l.date, name: R.s ? R.s.name : l.session, prog: R.p ? R.p.name : '', week: R.wi >= 0 ? `S${R.wi+1}` : '',
+      exs, ton: exs.reduce((a,e) => a + e.ton, 0), dur, rpe, srpe: rpe != null ? rpe * dur/60 : null, rpeCover: dur ? wdur/dur : 0});
+  }
+  return out.sort((a,b) => String(a.date).localeCompare(String(b.date)) || String(a.name).localeCompare(String(b.name)));
+}
+
+function statsHtml(){
+  const progs = [...S.programs.values()].sort((a,b) => String(a.name).localeCompare(String(b.name), 'fr'));
+  if (ST.prog !== 'all' && !S.programs.has(ST.prog)) ST.prog = 'all';
+  const ses = collectSessions();
+  const exMap = new Map();
+  ses.forEach(s => s.exs.forEach(e => { const m = exMap.get(e.name) || {name:e.name, n:0, ton:0, rm:0, first:null, last:null};
+    m.n++; m.ton += e.ton; if (e.best) m.rm++; if (m.first == null) m.first = e.ton; m.last = e.ton; exMap.set(e.name, m); }));
+  const exList = [...exMap.values()].sort((a,b) => b.rm - a.rm || b.n - a.n || b.ton - a.ton);
+  if (!exMap.has(ST.ex)) ST.ex = (exList.find(x => x.rm) || exList[0] || {}).name || '';
+  const filters = `<div class="stfilters">
+      <label class="flab" for="stProg">Programme<select id="stProg"><option value="all">Tous les programmes</option>${progs.map(p => `<option value="${p.id}" ${p.id===ST.prog?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label>
+      <label class="flab" for="stPer">Période<select id="stPer">${[['all','Tout'],['30','30 derniers jours'],['90','3 derniers mois'],['180','6 derniers mois']].map(([v,t]) => `<option value="${v}" ${v===ST.per?'selected':''}>${t}</option>`).join('')}</select></label>
+      <label class="flab" for="stEx">Exercice<select id="stEx">${exList.map(x => `<option ${x.name===ST.ex?'selected':''}>${esc(x.name)}</option>`).join('')}</select></label>
+    </div>`;
+  if (!ses.length) return `<div class="weekhead"><h2>Suivi</h2></div>${filters}
+    <div class="empty"><h3>Aucune séance terminée</h3><p class="note">Les graphiques se construisent à partir des séances validées en mode séance avec « Terminer la séance ». Cochez vos séries, notez le RPE de chaque exercice, puis terminez la séance.</p>
+    <button class="primary" data-view="log">Ouvrir le mode séance</button></div>`;
+  const ex = ses.filter(s => s.exs.some(e => e.name === ST.ex)).map(s => ({s, e: s.exs.find(e => e.name === ST.ex)}));
+  const rm = ex.filter(x => x.e.best);
+  const rmFirst = rm[0], rmLast = rm[rm.length-1];
+  const rmBest = rm.reduce((a,x) => !a || x.e.best.v > a.e.best.v ? x : a, null);
+  const sr = ses.filter(s => s.srpe != null);
+  const totTon = ses.reduce((a,s) => a + s.ton, 0);
+  const pct = (a, b) => a ? Math.round((b/a - 1)*1000)/10 : 0;
+  const trend = (a, b, unit) => { const d = Math.round((b - a)*10)/10; return d ? `<span class="${d<0?'neg':'pos'}">${d>0?'+':''}${fmt(d,1)}${unit} (${d>0?'+':''}${fmt(pct(a,b),1)} %)</span>` : '<span class="mini">stable</span>'; };
+  return `<div class="weekhead"><h2>Suivi</h2><span class="note">${ses.length} séance${ses.length>1?'s':''} terminée${ses.length>1?'s':''}</span></div>
+    ${filters}
+    <div class="kpis kpis4">
+      <div class="kpi"><b>${ses.length}</b><span>Séances</span></div>
+      <div class="kpi"><b>${fmtT(totTon)}</b><span>Tonnage total</span></div>
+      <div class="kpi"><b>${sr.length ? fmt(sr.reduce((a,s) => a + s.srpe, 0)/sr.length, 0) : '–'}</b><span>sRPE moyen / séance (UA)</span></div>
+      <div class="kpi"><b>${rmBest ? fmt(rmBest.e.best.v, 1) + ' kg' : '–'}</b><span>Meilleur 1RM estimé · ${esc(ST.ex)}</span></div>
+    </div>
+
+    <section class="step">
+      <h3>1RM estimé · ${esc(ST.ex)}</h3>
+      ${rm.length ? `<p class="note">Meilleure série de chaque séance, formule d'Epley : charge × (1 + reps / 30), séries de 1 à ${RM_MAX_REPS} reps. ${rm.length > 1 ? 'Évolution : ' + trend(rmFirst.e.best.v, rmLast.e.best.v, ' kg') : ''}</p>
+        <div class="chart" data-chart="rm"></div>
+        <details class="data"><summary>Voir les données</summary><div class="tablebox"><table class="mus"><thead><tr><th>Date</th><th>Séance</th><th>Meilleure série</th><th>1RM est.</th></tr></thead>
+          <tbody>${rm.map(x => `<tr><td>${ddmm(x.s.date)}</td><td>${esc(x.s.name)}</td><td class="num">${x.e.best.r} × ${fmt(x.e.best.l,1)} kg</td><td class="num">${fmt(x.e.best.v,1)} kg</td></tr>`).join('')}</tbody></table></div></details>`
+      : `<p class="note">Pas d'estimation possible pour cet exercice : il faut au moins une série validée avec une charge et 1 à ${RM_MAX_REPS} répétitions.</p>`}
+    </section>
+
+    <section class="step">
+      <h3>Tonnage · ${esc(ST.ex)}</h3>
+      <p class="note">Somme reps × charge des séries validées, par séance.${ex.length > 1 ? ' Évolution : ' + trend(ex[0].e.ton, ex[ex.length-1].e.ton, ' kg') : ''}</p>
+      <div class="chart" data-chart="ton"></div>
+      <h4 class="sub">Tous les mouvements</h4>
+      <div class="tablebox"><table class="mus mvt"><thead><tr><th>Mouvement</th><th>Séances</th><th></th><th>Tonnage</th><th title="Tonnage de la dernière séance par rapport à la première">1re → dern.</th></tr></thead>
+        <tbody>${[...exMap.values()].sort((a,b) => b.ton - a.ton).map(m => { const mx = Math.max(...[...exMap.values()].map(x => x.ton), 1);
+          return `<tr class="${m.name===ST.ex?'sel':''}"><td><button class="mname" data-stex="${esc(m.name)}">${esc(m.name)}</button></td><td class="num">${m.n}</td>
+            <td class="bar"><i style="width:${m.ton/mx*100}%"></i></td><td class="num">${fmtT(m.ton)}</td>
+            <td class="num">${m.n > 1 && m.first ? `<span class="${m.last<m.first?'neg':m.last>m.first?'pos':''}">${m.last>=m.first?'+':''}${fmt(pct(m.first, m.last),0)} %</span>` : '–'}</td></tr>`; }).join('')}</tbody></table></div>
+    </section>
+
+    <section class="step">
+      <h3>Charge interne de séance (sRPE)</h3>
+      <p class="note">RPE moyen de séance = moyenne des RPE d'exercice pondérée par leur durée ; durée = reps × ${REP_SEC} s (temps sous charge, hors récupération). Charge sRPE = RPE moyen × durée (min), en unités arbitraires.</p>
+      ${sr.length ? `<div class="chart" data-chart="srpe"></div>
+        <h4 class="sub">RPE moyen de séance</h4>
+        <div class="chart" data-chart="rpe"></div>
+        <details class="data"><summary>Voir les données</summary><div class="tablebox"><table class="mus"><thead><tr><th>Date</th><th>Séance</th><th>Reps</th><th>Durée</th><th>RPE moy.</th><th>sRPE</th></tr></thead>
+          <tbody>${sr.map(s => `<tr><td>${ddmm(s.date)}</td><td>${esc(s.name)}</td><td class="num">${fmt(s.dur/REP_SEC)}</td><td class="num">${fmt(s.dur/60,1)} min</td><td class="num">${fmt(s.rpe,1)}${s.rpeCover < 0.999 ? '*' : ''}</td><td class="num">${fmt(s.srpe,0)}</td></tr>`).join('')}</tbody></table></div>
+          ${sr.some(s => s.rpeCover < 0.999) ? `<p class="note">* RPE manquant sur une partie des exercices : la moyenne porte sur ceux qui ont un RPE, la durée sur toute la séance.</p>` : ''}</details>`
+      : `<p class="note">Aucune séance avec RPE. Choisissez un RPE pour chaque exercice en mode séance pour obtenir la charge sRPE.</p>`}
+    </section>`;
+}
+
+/* graphiques SVG (une série, une échelle, survol) */
+function niceStep(r){ const e = Math.pow(10, Math.floor(Math.log10(r || 1))); const f = r/e; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * e; }
+function drawChart(el, pts, o){
+  const W = Math.max(280, el.clientWidth), H = o.h || 210, m = {l:46, r:14, t:14, b:30};
+  const pw = W - m.l - m.r, ph = H - m.t - m.b, n = pts.length;
+  const vals = pts.map(p => p.v);
+  let lo = o.fixed ? o.fixed[0] : (o.zero ? 0 : Math.min(...vals)), hi = o.fixed ? o.fixed[1] : Math.max(...vals);
+  if (!o.fixed){ if (hi === lo){ hi += hi ? hi*0.1 : 1; lo = o.zero ? 0 : Math.max(0, lo - (lo*0.1 || 1)); } const pad = (hi - lo)*0.08; hi += pad; if (!o.zero) lo = Math.max(0, lo - pad); }
+  const step = o.step || niceStep((hi - lo)/4); lo = Math.floor(lo/step)*step; hi = Math.ceil(hi/step)*step;
+  const y = v => m.t + ph - (v - lo)/(hi - lo || 1)*ph;
+  const band = pw / n, x = i => m.l + band*(i + 0.5);
+  let g = '';
+  for (let v = lo; v <= hi + 1e-9; v += step) g += `<line x1="${m.l}" x2="${W-m.r}" y1="${y(v)}" y2="${y(v)}" class="grid"/><text x="${m.l-6}" y="${y(v)+4}" text-anchor="end" class="ax">${fmt(v, step < 1 ? 1 : 0)}</text>`;
+  const every = Math.max(1, Math.ceil(n / Math.max(1, Math.floor(pw/52))));
+  pts.forEach((p, i) => { if (i % every === 0 || i === n-1) if (!(i !== n-1 && n-1 - i < every)) g += `<text x="${x(i)}" y="${H-8}" text-anchor="middle" class="ax">${esc(p.x)}</text>`; });
+  let marks = '';
+  if (o.type === 'bar'){
+    const bw = Math.max(4, Math.min(28, band*0.62));
+    pts.forEach((p, i) => { const top = y(p.v), base = y(lo), h = Math.max(0, base - top), r = Math.min(4, bw/2, h);
+      marks += `<path class="mk" d="M${x(i)-bw/2},${base} V${top+r} Q${x(i)-bw/2},${top} ${x(i)-bw/2+r},${top} H${x(i)+bw/2-r} Q${x(i)+bw/2},${top} ${x(i)+bw/2},${top+r} V${base} Z"/>`; });
+  } else {
+    marks += `<path class="ln" d="${pts.map((p, i) => `${i ? 'L' : 'M'}${x(i)},${y(p.v)}`).join(' ')}"/>`;
+    pts.forEach((p, i) => marks += `<circle class="dot" cx="${x(i)}" cy="${y(p.v)}" r="4"/>`);
+    const L = n-1; marks += `<text x="${Math.min(x(L), W-m.r-2)}" y="${y(pts[L].v)-10}" text-anchor="${n > 1 ? 'end' : 'middle'}" class="lab">${esc(o.fmt(pts[L].v))}</text>`;
+  }
+  el.innerHTML = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.label)}">${g}${marks}<line class="guide" y1="${m.t}" y2="${m.t+ph}" x1="0" x2="0" visibility="hidden"/><rect class="hit" x="${m.l}" y="${m.t}" width="${pw}" height="${ph}"/></svg><div class="tip" hidden></div>`;
+  const svg = el.querySelector('svg'), tip = el.querySelector('.tip'), guide = el.querySelector('.guide');
+  const show = ev => { const r = svg.getBoundingClientRect(); const i = Math.max(0, Math.min(n-1, Math.floor((ev.clientX - r.left - m.l)/band)));
+    guide.setAttribute('x1', x(i)); guide.setAttribute('x2', x(i)); guide.setAttribute('visibility', 'visible');
+    el.querySelectorAll('.mk,.dot').forEach((d, j) => d.classList.toggle('on', j === i));
+    tip.innerHTML = pts[i].tip; tip.hidden = false;
+    const tw = tip.offsetWidth; let left = x(i) + 10; if (left + tw > W) left = x(i) - tw - 10; tip.style.left = Math.max(0, left) + 'px'; tip.style.top = (m.t) + 'px'; };
+  const hide = () => { tip.hidden = true; guide.setAttribute('visibility', 'hidden'); el.querySelectorAll('.on').forEach(d => d.classList.remove('on')); };
+  svg.addEventListener('pointermove', show); svg.addEventListener('pointerdown', show); svg.addEventListener('pointerleave', hide);
+}
+function drawCharts(){
+  if (S.view !== 'stats') return;
+  const ses = collectSessions();
+  const ex = ses.filter(s => s.exs.some(e => e.name === ST.ex)).map(s => ({s, e: s.exs.find(e => e.name === ST.ex)}));
+  const head = s => `<b>${ddmm(s.date)} · ${esc(s.name)}</b>${s.week ? `<br><span class="mini">${esc(s.week)}${s.prog ? ' · ' + esc(s.prog) : ''}</span>` : ''}`;
+  const el = k => document.querySelector(`[data-chart="${k}"]`);
+  const rm = ex.filter(x => x.e.best);
+  if (el('rm') && rm.length) drawChart(el('rm'), rm.map(({s, e}) => ({x: ddmm(s.date), v: e.best.v, tip: `${head(s)}<br>1RM estimé : <b>${fmt(e.best.v,1)} kg</b><br>meilleure série ${e.best.r} × ${fmt(e.best.l,1)} kg`})),
+    {type:'line', label:`1RM estimé ${ST.ex}`, fmt: v => fmt(v,1) + ' kg'});
+  if (el('ton') && ex.length) drawChart(el('ton'), ex.map(({s, e}) => ({x: ddmm(s.date), v: e.ton, tip: `${head(s)}<br>Tonnage : <b>${fmt(e.ton)} kg</b><br>${e.sets.length} séries · ${e.reps} reps`})),
+    {type:'bar', zero:true, label:`Tonnage ${ST.ex}`, fmt: v => fmt(v) + ' kg'});
+  const sr = ses.filter(s => s.srpe != null);
+  if (el('srpe') && sr.length) drawChart(el('srpe'), sr.map(s => ({x: ddmm(s.date), v: s.srpe, tip: `${head(s)}<br>Charge sRPE : <b>${fmt(s.srpe,0)} UA</b><br>RPE moyen ${fmt(s.rpe,1)} × ${fmt(s.dur/60,1)} min`})),
+    {type:'bar', zero:true, label:'Charge sRPE par séance', fmt: v => fmt(v,0)});
+  if (el('rpe') && sr.length) drawChart(el('rpe'), sr.map(s => ({x: ddmm(s.date), v: s.rpe, tip: `${head(s)}<br>RPE moyen : <b>${fmt(s.rpe,1)}</b><br>${fmt(s.dur/REP_SEC)} reps · ${fmt(s.dur/60,1)} min sous charge`})),
+    {type:'line', fixed:[0,10], step:2, h:170, label:'RPE moyen de séance', fmt: v => fmt(v,1)});
+}
+let rzT = null; window.addEventListener('resize', () => { clearTimeout(rzT); rzT = setTimeout(drawCharts, 150); });
+document.addEventListener('change', e => {
+  const id = e.target.id; if (!['stProg','stPer','stEx'].includes(id)) return;
+  if (id === 'stProg') ST.prog = e.target.value; if (id === 'stPer') ST.per = e.target.value; if (id === 'stEx') ST.ex = e.target.value;
+  saveST(); renderMain();
+});
 
 /* ---------- plan de volume ---------- */
 function ensurePlan(p){ if (!p.plan) p.plan = {sessions:['Séance A','Séance B','Séance C'], targets:{}, items:[]}; return p.plan; }
