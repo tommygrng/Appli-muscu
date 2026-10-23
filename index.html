@@ -844,20 +844,23 @@ $('#customBox').addEventListener('click', e => {
 /* ---------- mode séance ---------- */
 const today = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); };
 function logKey(p, w, s){ return (p.id + '__' + w.id + '__' + s.id).slice(0, 190); }
-/* RPE par série (repli : RPE d'exercice des anciennes saisies) et 1RM */
+/* RPE par série (repli : RPE d'exercice des anciennes saisies) et 3RM estimé */
 const RPE_OPTS = ['5','5.5','6','6.5','7','7.5','8','8.5','9','9.5','10'];
 const setRpe = (x, l, id) => num(x && x.e) || num(l && l.rpe && l.rpe[id]) || null;
 const rirOf = rpe => rpe ? Math.max(0, 10 - rpe) : null;
 const RM_MAX_REPS = 12;       // reps réellement faites, au-delà l'estimation n'est plus fiable
 const RM_MAX_EFF = 15;        // reps + réserve
 const RIR_MAX = 4;            // au-delà de 4 reps en réserve, l'auto-estimation n'est plus fiable
+const REF_REPS = 3;           // on travaille en 3RM : charge maximale pour 3 reps à l'échec
 const epley = (load, reps) => reps <= 1 ? load : load * (1 + reps/30);
+/* 3RM estimé = 1RM d'Epley ramené à 3 reps : 1RM / (1 + 3/30) ; une série de 3 reps à l'échec donne exactement sa charge */
+const est3 = (load, reps) => epley(load, reps) / (1 + REF_REPS/30);
 /* estimation d'une série : brute (Epley sur les reps faites) et corrigée (Epley sur reps + RIR) */
-function e1rm(r, ld, rpe){
+function estRM(r, ld, rpe){
   if (!(ld > 0) || !(r >= 1) || r > RM_MAX_REPS) return null;
   const rir = rirOf(rpe); const eff = r + (rir ?? 0);
-  const raw = epley(ld, r);
-  const cor = (eff <= RM_MAX_EFF && (rir == null || rir <= RIR_MAX)) ? epley(ld, eff) : null;
+  const raw = est3(ld, r);
+  const cor = (eff <= RM_MAX_EFF && (rir == null || rir <= RIR_MAX)) ? est3(ld, eff) : null;
   return {raw, cor, rir, eff, hasRpe: rpe != null};
 }
 
@@ -967,7 +970,7 @@ function logHtml(p){
     <label class="note" for="lgNote">Notes de séance</label>
     <textarea id="lgNote" placeholder="Sensations, douleurs, ajustements…">${esc(l ? l.note : '')}</textarea>
     <button class="bigbtn primary" data-lgfinish>Terminer la séance</button>
-    <p class="note">Touchez ✓ quand une série est faite : sans saisie, ce sont les valeurs de la série précédente ou du programme qui sont reprises. Notez le RPE de chaque série (10 = échec, 9 = 1 rep en réserve, 8 = 2 reps…) : il sert au 1RM corrigé et à la charge sRPE. « Remplacer » et « Ajouter » ne changent que la séance réalisée, jamais le programme. ${STANDALONE ? 'Tout est enregistré sur cet appareil.' : 'Tout est synchronisé avec l\'ordinateur.'}</p>`;
+    <p class="note">Touchez ✓ quand une série est faite : sans saisie, ce sont les valeurs de la série précédente ou du programme qui sont reprises. Notez le RPE de chaque série (10 = échec, 9 = 1 rep en réserve, 8 = 2 reps…) : il sert au 3RM corrigé et à la charge sRPE. « Remplacer » et « Ajouter » ne changent que la séance réalisée, jamais le programme. ${STANDALONE ? 'Tout est enregistré sur cet appareil.' : 'Tout est synchronisé avec l\'ordinateur.'}</p>`;
 }
 function logCtx(){ const p = cur(); const w = p.weeks[S.wk]; const s = w.sessions[S.lgS]; return {p, w, s}; }
 function findEntry(s, l, id){ return logEntries(s, l).find(en => en.id === id); }
@@ -1025,7 +1028,7 @@ async function saveText(fname, text){
 }
 function exportLogsCsv(keys){
   const dec = v => (v === '' || v == null) ? '' : String(v).replace('.', ',');
-  const H = ['Date','Programme','Semaine','Cycle','Séance','Exercice prévu','Exercice réalisé','Type','Série','Statut','Reps prévues','Charge prévue kg','Reps réalisées','Charge réalisée kg','Tonnage kg','RPE','Reps en réserve','1RM Epley kg','1RM corrigé RIR kg','Niveau','Muscles principaux','Muscles secondaires','Séance terminée','Notes séance'];
+  const H = ['Date','Programme','Semaine','Cycle','Séance','Exercice prévu','Exercice réalisé','Type','Série','Statut','Reps prévues','Charge prévue kg','Reps réalisées','Charge réalisée kg','Tonnage kg','RPE','Reps en réserve','3RM estimé brut kg','3RM corrigé RIR kg','Niveau','Muscles principaux','Muscles secondaires','Séance terminée','Notes séance'];
   const out = [H.join(';')]; let nLogs = 0;
   const list = (keys || [...S.logs.keys()]).map(k => [k, S.logs.get(k)]).filter(([k, l]) => l)
     .sort((a, b) => String(a[1].date).localeCompare(String(b[1].date)) || String(a[1].session).localeCompare(String(b[1].session)));
@@ -1052,7 +1055,7 @@ function exportLogsCsv(keys){
         if (statut === 'Vide') continue;
         out.push([...base, en.plan ? en.planEx : '', en.ex, en.kind, k+1, statut,
           k < nPlan ? dec(en.plan.reps) : '', k < nPlan ? dec(en.plan.load) : '', dec(rr), dec(ll),
-          did ? dec(Math.round(num(rr)*num(ll)*10)/10) : '', ...(() => { const rp = setRpe(x, l, en.id); const est = did ? e1rm(num(rr), num(ll), rp) : null;
+          did ? dec(Math.round(num(rr)*num(ll)*10)/10) : '', ...(() => { const rp = setRpe(x, l, en.id); const est = did ? estRM(num(rr), num(ll), rp) : null;
             const r1 = v => v != null ? dec(Math.round(v*10)/10) : '';
             return [dec(rp ?? ''), rp != null ? dec(rirOf(rp)) : '', est ? r1(est.raw) : '', est ? r1(est.cor) : '']; })(), e ? e.lvl : '', e ? e.p.join(', ') : '', e ? e.s.join(', ') : '',
           l.finished ? 'Oui' : 'Non', l.note || ''].map(csvCell).join(';'));
@@ -1096,7 +1099,7 @@ function collectSessions(){
       const sets = ((l.sets[en.id]) || []).filter(x => x.d).map(x => ({r: num(x.r || (en.plan && en.plan.reps)), l: num(x.l || (en.plan && en.plan.load)), e: setRpe(x, l, en.id)})).filter(x => x.r > 0);
       if (!sets.length) continue;
       let best = null;
-      sets.forEach(x => { const est = e1rm(x.r, x.l, x.e); if (!est) return;
+      sets.forEach(x => { const est = estRM(x.r, x.l, x.e); if (!est) return;
         const v = ST.rm === 'raw' ? est.raw : (est.cor ?? null); if (v == null) return;
         if (!best || v > best.v) best = {v, r:x.r, l:x.l, rpe:x.e, rir:est.rir, eff:est.eff, raw:est.raw, noRpe: !est.hasRpe}; });
       const reps = sets.reduce((a,x) => a + x.r, 0);
@@ -1177,8 +1180,8 @@ const ensureProfile = () => { const P = S.profile; P.weights = P.weights || []; 
 const lastBW = () => { const w = [...ensureProfile().weights].sort((a,b) => String(a.date).localeCompare(String(b.date))); return w.length ? w[w.length-1] : null; };
 const todayNum = () => dayNum(today());
 function collectAll(){ const sv = {...ST}; ST.prog = 'all'; ST.per = 'all'; ST.nodl = false; const r = collectSessions(); Object.assign(ST, sv); return r; }
-/* 1RM de référence : meilleure estimation des 28 jours précédant la dernière séance du mouvement */
-function current1RM(series){
+/* 3RM de référence : meilleure estimation des 28 jours précédant la dernière séance du mouvement */
+function currentRM(series){
   if (!series || !series.rm.length) return null;
   const tLast = Math.max(...series.rm.map(p => p.t));
   const win = series.rm.filter(p => p.t >= tLast - 28);
@@ -1201,7 +1204,7 @@ function goalsHtml(){
   const fBw = fitTrend(W.map(x => ({t:dayNum(x.date), v:num(x.kg)})));
   const bwGoal = num(P.bwGoal.kg);
   const rows = P.goals.map(g => {
-    const S1 = all.get(g.ex); const c = current1RM(S1); const tgt = goalTarget(g);
+    const S1 = all.get(g.ex); const c = currentRM(S1); const tgt = goalTarget(g);
     const pr = c && tgt ? Math.min(1, c.v/tgt) : 0; const done = c && tgt && c.v >= tgt;
     const proj = done ? {txt:'<span class="pos">✓ atteint</span>'} : projection(S1, tgt);
     let late = '';
@@ -1232,7 +1235,7 @@ function goalsHtml(){
           : `<p class="note">Saisissez une première pesée : elle sert aussi à convertir les objectifs en % du poids de corps.</p>`}
       </div>
       <div class="gblock">
-        <h4 class="sub">Objectifs de 1RM</h4>
+        <h4 class="sub">Objectifs de 3RM</h4>
         <div class="gform">
           <input id="gEx" list="exlist" placeholder="Mouvement" value="${esc(ST.ex)}" aria-label="Mouvement">
           <select id="gMode" aria-label="Type d'objectif"><option value="abs">kg</option><option value="pct">% PDC</option></select>
@@ -1240,7 +1243,7 @@ function goalsHtml(){
           <input type="date" id="gDate" aria-label="Échéance (facultatif)">
           <button class="primary" data-goaladd>Ajouter</button>
         </div>
-        <p class="note">Le 1RM actuel est la meilleure estimation (${ST.rm === 'raw' ? 'brute' : 'corrigée RIR'}) des 28 jours précédant la dernière séance du mouvement, toutes séances confondues. La projection prolonge la tendance (${ST.method === 'ts' ? 'Theil-Sen' : 'régression linéaire'}).</p>
+        <p class="note">Le 3RM actuel est la meilleure estimation (${ST.rm === 'raw' ? 'brute' : 'corrigée RIR'}) des 28 jours précédant la dernière séance du mouvement, toutes séances confondues. La projection prolonge la tendance (${ST.method === 'ts' ? 'Theil-Sen' : 'régression linéaire'}).</p>
         ${P.goals.length ? `<div class="tablebox"><table class="mus goals"><thead><tr><th>Mouvement</th><th>Cible</th><th>Actuel</th><th>Avancement</th><th>Projection</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
           : `<p class="note">Aucun objectif. Exemple : Back squat barre haute, 150 % PDC, échéance fin de bloc.</p>`}
       </div>
@@ -1275,7 +1278,7 @@ function statsHtml(){
       <label class="flab" for="stPer">Période<select id="stPer">${[['all','Tout'],['30','30 derniers jours'],['90','3 derniers mois'],['180','6 derniers mois']].map(([v,t]) => `<option value="${v}" ${v===ST.per?'selected':''}>${t}</option>`).join('')}</select></label>
       <label class="flab" for="stEx">Exercice<select id="stEx">${exList.map(x => `<option ${x.name===ST.ex?'selected':''}>${esc(x.name)}</option>`).join('')}</select></label>
       <label class="flab" for="stMethod">Calcul de la tendance<select id="stMethod"><option value="ts" ${ST.method==='ts'?'selected':''}>Theil-Sen (robuste)</option><option value="ols" ${ST.method==='ols'?'selected':''}>Régression linéaire</option></select></label>
-      <label class="flab" for="stRm">Calcul du 1RM<select id="stRm"><option value="rir" ${ST.rm!=='raw'?'selected':''}>Corrigé par la réserve (RIR)</option><option value="raw" ${ST.rm==='raw'?'selected':''}>Brut (Epley)</option></select></label>
+      <label class="flab" for="stRm">Calcul du 3RM<select id="stRm"><option value="rir" ${ST.rm!=='raw'?'selected':''}>Corrigé par la réserve (RIR)</option><option value="raw" ${ST.rm==='raw'?'selected':''}>Brut (Epley)</option></select></label>
       <label class="chk" for="stNoDl"><input type="checkbox" id="stNoDl" ${ST.nodl?'checked':''}> Exclure les semaines de décharge</label>
     </div>`;
   if (!ses.length) return `<div class="weekhead"><h2>Suivi</h2></div>${filters}
@@ -1294,19 +1297,19 @@ function statsHtml(){
       <div class="kpi"><b>${ses.length}</b><span>Séances</span></div>
       <div class="kpi"><b>${fmtT(totTon)}</b><span>Tonnage total</span></div>
       <div class="kpi"><b>${sr.length ? fmt(sr.reduce((a,s) => a + s.srpe, 0)/sr.length, 0) : '–'}</b><span>sRPE moyen / séance (UA)</span></div>
-      <div class="kpi"><b>${X.best ? fmt(X.best.v, 1) + ' kg' : '–'}</b><span>Meilleur 1RM estimé · ${esc(ST.ex)}</span></div>
+      <div class="kpi"><b>${X.best ? fmt(X.best.v, 1) + ' kg' : '–'}</b><span>Meilleur 3RM estimé · ${esc(ST.ex)}</span></div>
     </div>
     ${goalsHtml()}
 
     <section class="step">
       <h3>Progression par mouvement</h3>
       <p class="note">Tendance = pente de la droite perf / date, exprimée en % de la valeur moyenne par semaine, pour comparer des mouvements de charges différentes. ${ST.method === 'ts' ? 'Theil-Sen prend la médiane des pentes entre toutes les paires de séances : une séance atypique (découverte, mauvaise journée) ne déplace presque pas la tendance.' : 'Régression des moindres carrés : chaque séance pèse autant, une séance atypique influence la pente.'} Pointillés : droite de tendance.</p>
-      <div class="tfgrid">${topFlop(series, 'fRm', 'kg', '1RM estimé')}${topFlop(series, 'fTon', 'kg', 'Tonnage')}</div>
+      <div class="tfgrid">${topFlop(series, 'fRm', 'kg', '3RM estimé')}${topFlop(series, 'fTon', 'kg', 'Tonnage')}</div>
     </section>
 
     <section class="step">
-      <h3>Meilleurs 1RM estimés</h3>
-      ${best.length ? `<div class="tablebox"><table class="mus bestrm"><thead><tr><th>Mouvement</th><th>1RM est.</th><th>Meilleure série</th><th>Date</th><th>Évolution</th><th>Tendance</th></tr></thead>
+      <h3>Meilleurs 3RM estimés</h3>
+      ${best.length ? `<div class="tablebox"><table class="mus bestrm"><thead><tr><th>Mouvement</th><th>3RM est.</th><th>Meilleure série</th><th>Date</th><th>Évolution</th><th>Tendance</th></tr></thead>
         <tbody>${best.map(x => `<tr class="${x.name===ST.ex?'sel':''}"><td><button class="mname" data-stex="${esc(x.name)}">${esc(x.name)}</button></td>
           <td class="num"><b>${fmt(x.best.v,1)} kg</b></td><td class="num">${x.best.r} × ${fmt(x.best.l,1)}${x.best.rpe != null ? ` @${fmt(x.best.rpe,1)}` : ''}</td><td class="num">${ddmm(x.best.date)}</td>
           <td>${sparkSVG(x.rm, x.fRm)}</td><td class="num">${pctTxt(x.fRm)}</td></tr>`).join('')}</tbody></table></div>`
@@ -1314,12 +1317,12 @@ function statsHtml(){
     </section>
 
     <section class="step">
-      <h3>1RM estimé · ${esc(ST.ex)}</h3>
-      ${rm.length ? `<p class="note">Meilleure série de chaque séance. ${ST.rm === 'raw' ? `Epley : charge × (1 + reps / 30), séries de 1 à ${RM_MAX_REPS} reps.` : `Epley corrigé : charge × (1 + (reps + réserve) / 30), avec réserve = 10 − RPE ; une série de 8 reps à RPE 7 compte comme 11 reps à l'échec. Séries de 1 à ${RM_MAX_REPS} reps, ${RM_MAX_EFF} reps équivalentes au plus ; les séries à RPE &lt; ${10 - RIR_MAX} (plus de ${RIR_MAX} reps en réserve) sont écartées car l'estimation de la réserve y devient peu fiable. Sans RPE, la série est considérée à l'échec (point creux sur le graphique).`} Tendance : ${slopeTxt(X.fRm, 'kg')}</p>
+      <h3>3RM estimé · ${esc(ST.ex)}</h3>
+      ${rm.length ? `<p class="note">Meilleure série de chaque séance. 3RM = charge maximale pour 3 reps à l'échec, estimé par Epley : charge × (30 + reps) / 33, si bien qu'une série de 3 reps à l'échec donne exactement sa charge. ${ST.rm === 'raw' ? `Séries de 1 à ${RM_MAX_REPS} reps, considérées à l'échec.` : `Version corrigée : reps remplacées par reps + réserve, avec réserve = 10 − RPE ; une série de 8 reps à RPE 7 compte comme 11 reps à l'échec. Séries de 1 à ${RM_MAX_REPS} reps, ${RM_MAX_EFF} reps équivalentes au plus ; les séries à RPE &lt; ${10 - RIR_MAX} (plus de ${RIR_MAX} reps en réserve) sont écartées car l'estimation de la réserve y devient peu fiable. Sans RPE, la série est considérée à l'échec (point creux sur le graphique).`} Tendance : ${slopeTxt(X.fRm, 'kg')}</p>
         <div class="chart" data-chart="rm"></div>
-        <details class="data"><summary>Voir les données</summary><div class="tablebox"><table class="mus"><thead><tr><th>Date</th><th>Séance</th><th>Meilleure série</th><th>RPE</th><th>1RM est.</th><th>Brut</th></tr></thead>
+        <details class="data"><summary>Voir les données</summary><div class="tablebox"><table class="mus"><thead><tr><th>Date</th><th>Séance</th><th>Meilleure série</th><th>RPE</th><th>3RM est.</th><th>Brut</th></tr></thead>
           <tbody>${rm.map(x => `<tr><td>${ddmm(x.s.date)}</td><td>${esc(x.s.name)}</td><td class="num">${x.e.best.r} × ${fmt(x.e.best.l,1)} kg</td><td class="num">${x.e.best.rpe != null ? fmt(x.e.best.rpe,1) : '–'}</td><td class="num">${fmt(x.e.best.v,1)} kg</td><td class="num mini">${fmt(x.e.best.raw,1)}</td></tr>`).join('')}</tbody></table></div></details>`
-      : `<p class="note">Pas d'estimation possible pour cet exercice : il faut au moins une série validée avec une charge et 1 à ${RM_MAX_REPS} répétitions.</p>`}
+      : `<p class="note">Pas d'estimation de 3RM possible pour cet exercice : il faut au moins une série validée avec une charge et 1 à ${RM_MAX_REPS} répétitions.</p>`}
     </section>
 
     <section class="step">
@@ -1402,8 +1405,8 @@ function drawCharts(){
   const el = k => document.querySelector(`[data-chart="${k}"]`);
   const rm = ex.filter(x => x.e.best);
   const fRm = fitTrend(rm.map(({s, e}) => ({t: dayNum(s.date), v: e.best.v})));
-  if (el('rm') && rm.length) drawChart(el('rm'), rm.map(({s, e}) => ({x: ddmm(s.date), t: dayNum(s.date), v: e.best.v, hollow: ST.rm !== 'raw' && e.best.noRpe, tip: `${head(s)}<br>1RM estimé : <b>${fmt(e.best.v,1)} kg</b><br>meilleure série ${e.best.r} × ${fmt(e.best.l,1)} kg${e.best.rpe != null ? ` @ RPE ${fmt(e.best.rpe,1)}` : ''}${ST.rm !== 'raw' ? (e.best.noRpe ? '<br><span class="mini">sans RPE : considérée à l\'échec</span>' : `<br><span class="mini">${fmt(e.best.eff,1)} reps équivalentes · brut ${fmt(e.best.raw,1)} kg</span>`) : ''}`})),
-    {type:'line', time:true, fit:fRm, target: (() => { const g = ensureProfile().goals.find(g => norm(g.ex) === norm(ST.ex)); const v = g && goalTarget(g); return v ? {v, label:`Objectif ${fmt(v,1)} kg`} : null; })(), label:`1RM estimé ${ST.ex}`, fmt: v => fmt(v,1) + ' kg'});
+  if (el('rm') && rm.length) drawChart(el('rm'), rm.map(({s, e}) => ({x: ddmm(s.date), t: dayNum(s.date), v: e.best.v, hollow: ST.rm !== 'raw' && e.best.noRpe, tip: `${head(s)}<br>3RM estimé : <b>${fmt(e.best.v,1)} kg</b><br>meilleure série ${e.best.r} × ${fmt(e.best.l,1)} kg${e.best.rpe != null ? ` @ RPE ${fmt(e.best.rpe,1)}` : ''}${ST.rm !== 'raw' ? (e.best.noRpe ? '<br><span class="mini">sans RPE : considérée à l\'échec</span>' : `<br><span class="mini">${fmt(e.best.eff,1)} reps équivalentes · brut ${fmt(e.best.raw,1)} kg</span>`) : ''}`})),
+    {type:'line', time:true, fit:fRm, target: (() => { const g = ensureProfile().goals.find(g => norm(g.ex) === norm(ST.ex)); const v = g && goalTarget(g); return v ? {v, label:`Objectif ${fmt(v,1)} kg`} : null; })(), label:`3RM estimé ${ST.ex}`, fmt: v => fmt(v,1) + ' kg'});
   if (el('ton') && ex.length) drawChart(el('ton'), ex.map(({s, e}) => ({x: ddmm(s.date), v: e.ton, tip: `${head(s)}<br>Tonnage : <b>${fmt(e.ton)} kg</b><br>${e.sets.length} séries · ${e.reps} reps`})),
     {type:'bar', zero:true, label:`Tonnage ${ST.ex}`, fmt: v => fmt(v) + ' kg'});
   const W = [...ensureProfile().weights].sort((a,b) => String(a.date).localeCompare(String(b.date)));
